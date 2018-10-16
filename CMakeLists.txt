@@ -1,35 +1,62 @@
-cmake_minimum_required(VERSION 2.4.6)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+cmake_minimum_required(VERSION 2.8.3)
+project(loam_velodyne)
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+find_package(catkin REQUIRED COMPONENTS
+  geometry_msgs
+  nav_msgs
+  sensor_msgs
+  roscpp
+  rospy
+  std_msgs
+  tf)
 
-rosbuild_init()
+#find_package(Eigen3 REQUIRED)
+find_package(PCL REQUIRED)
+find_package(OpenCV REQUIRED)
 
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+include_directories(
+  include
+	${catkin_INCLUDE_DIRS} 
+#	${EIGEN3_INCLUDE_DIR}
+	${PCL_INCLUDE_DIRS})
 
-#uncomment if you have defined messages
-#rosbuild_genmsg()
-#uncomment if you have defined services
-#rosbuild_gensrv()
+catkin_package(
+  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs
+  DEPENDS EIGEN3 PCL OpenCV
+  INCLUDE_DIRS include
+)
 
-#common commands for building c++ executables and libraries
-#rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
-#target_link_libraries(${PROJECT_NAME} another_library)
-#rosbuild_add_boost_directories()
-#rosbuild_link_boost(${PROJECT_NAME} thread)
-#rosbuild_add_executable(example examples/example.cpp)
-#target_link_libraries(example ${PROJECT_NAME})
 
-rosbuild_add_executable(scanRegistration src/scanRegistration.cpp)
-rosbuild_add_executable(laserOdometry src/laserOdometry.cpp)
-rosbuild_add_executable(laserMapping src/laserMapping.cpp)
-rosbuild_add_executable(transformMaintenance src/transformMaintenance.cpp)
+add_executable(scanRegistration src/scanRegistration.cpp)
+target_link_libraries(scanRegistration ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
+add_executable(laserOdometry src/laserOdometry.cpp)
+target_link_libraries(laserOdometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
+add_executable(laserMapping src/laserMapping.cpp)
+target_link_libraries(laserMapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
+add_executable(transformMaintenance src/transformMaintenance.cpp)
+target_link_libraries(transformMaintenance ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+
+if (CATKIN_ENABLE_TESTING)
+  find_package(rostest REQUIRED)
+  # TODO: Download test data
+  catkin_download_test_data(${PROJECT_NAME}_test_data.tar.gz
+    https://dl.dropboxusercontent.com/s/y4hn486461tfmpm/velodyne_loam_test_data.tar.gz
+    MD5 3d5194e6981975588b7a93caebf79ba4)
+  add_custom_target(${PROJECT_NAME}_test_data
+    COMMAND ${CMAKE_COMMAND} -E tar -xzf velodyne_loam_test_data.tar.gz
+    DEPENDS ${PROJECT_NAME}_test_data.tar.gz)
+  configure_file(tests/loam.test.in
+                 ${PROJECT_BINARY_DIR}/test/loam.test)
+  add_rostest(${PROJECT_BINARY_DIR}/test/loam.test
+    DEPENDENCIES
+      ${PROJECT_NAME}_test_data
+      scanRegistration
+      laserOdometry
+      laserMapping
+      transformMaintenance)
+endif()
+
+
