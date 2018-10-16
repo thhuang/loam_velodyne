@@ -137,20 +137,6 @@ bool LaserMapping::setup(ros::NodeHandle& node, ros::NodeHandle& privateNode)
       }
    }
 
-   if (privateNode.getParam("mapFilterSize", fParam))
-   {
-      if (fParam < 0.001)
-      {
-         ROS_ERROR("Invalid mapFilterSize parameter: %f (expected >= 0.001)", fParam);
-         return false;
-      }
-      else
-      {
-         downSizeFilterMap().setLeafSize(fParam, fParam, fParam);
-         ROS_INFO("Set map down size filter leaf size: %g", fParam);
-      }
-   }
-
    // advertise laser mapping topics
    _pubLaserCloudSurround = node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_surround", 1);
    _pubLaserCloudFullRes  = node.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_registered", 2);
