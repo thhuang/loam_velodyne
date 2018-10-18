@@ -231,6 +231,31 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
                         laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
 
+  // add by thhuang
+  // Find starting orientation
+  for (int i = 0; i < cloudSize; i++) {
+      float x = laserCloudIn.points[i].x;
+      float y = laserCloudIn.points[i].y;
+      float z = laserCloudIn.points[i].z;
+      float angle = atan(z / sqrt(x*x + y*y));
+      if (!std::isnan(angle)) {
+          startOri = -atan2(y, x);
+          break;
+      }
+  }  
+  // Find ending orientation
+  for (int i = cloudSize - 1; i >= 0; i--) {
+      float x = laserCloudIn.points[i].x;
+      float y = laserCloudIn.points[i].y;
+      float z = laserCloudIn.points[i].z;
+      float angle = atan(z / sqrt(x*x + y*y));
+      if (!std::isnan(angle)) {
+          endOri = -atan2(y, x) + 2 * M_PI;
+          break;
+      }
+  }    
+  // add by thhuang
+
   if (endOri - startOri > 3 * M_PI) {
     endOri -= 2 * M_PI;
   } else if (endOri - startOri < M_PI) {
@@ -259,6 +284,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       continue;
     }
 
+/*
     float ori = -atan2(point.x, point.z);
     if (!halfPassed) {
       if (ori < startOri - M_PI / 2) {
@@ -279,10 +305,35 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         ori -= 2 * M_PI;
       } 
     }
+*/
+
+    // modify by thhuang
+    float ori = -atan2(point.x, point.z);
+    if (!halfPassed) {
+      if (ori < startOri) {
+        ori += 2 * M_PI;
+      } else if (ori > startOri + M_PI * 2) {
+        ori -= 2 * M_PI;
+      }
+
+      if (ori - startOri > M_PI) {
+        halfPassed = true;
+      }
+    } else {
+      ori += 2 * M_PI;
+
+      if (ori < endOri - M_PI * 2) {
+        ori += 2 * M_PI;
+      } else if (ori > endOri) {
+        ori -= 2 * M_PI;
+      } 
+    }
+    // modify by thhuang
 
     float relTime = (ori - startOri) / (endOri - startOri);
     point.intensity = scanID + scanPeriod * relTime;
 
+    // Combine with IMU data
     if (imuPointerLast >= 0) {
       float pointTime = relTime * scanPeriod;
       while (imuPointerFront != imuPointerLast) {
