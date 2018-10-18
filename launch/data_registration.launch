@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+
+<launch>
+  <node pkg="slam3d" type="data_registration" name="data_registration" output="screen">
+    <param name="lidar" value="VLP-16" />
+  </node>
+</launch>
