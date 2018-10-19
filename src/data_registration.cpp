@@ -37,10 +37,18 @@ inline double deg2rad(double degrees) {
 class DataRegistrar {
     bool            system_initiated;
     unsigned        system_init_count;
-    unsigned        system_delay;
+    const unsigned  system_delay;
     const unsigned  num_scans;
     const float     scan_period;
-    const float     M_2PI;
+    const unsigned  curvature_area; 
+    const unsigned  cloud_partition;
+    const float     threshold_parallel;
+    const float     threshold_occluded;
+    float           cloud_curvature[40000];
+    int             cloud_sort_id[40000];
+    bool            cloud_avoid[40000];
+    int             cloud_label[40000];
+        
 public:
     DataRegistrar() 
         : system_init_count(0), 
@@ -48,7 +56,10 @@ public:
           system_initiated(false), 
           num_scans(16),  // Number of channel (Velodyne VLP-16)
           scan_period(0.1),  // Inverse of the scan rate which is 10 Hz (Velodyne VLP-16)
-          M_2PI(2 * M_PI)
+          curvature_area(5),  // Index range for calculating the curvature of a point
+          cloud_partition(6),  // Divide the point cloud into cloud_partition region for feature extraction
+          threshold_parallel(0.0002),
+          threshold_occluded(0.1)
         {}
         
     void point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr& point_cloud_msg);
@@ -57,7 +68,11 @@ public:
 
 
 void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr& point_cloud_msg) {
-    
+ 
+    ////////////////
+    // Initialize //
+    ////////////////
+
     // Delay
     if (!system_initiated) {
         system_init_count++;
@@ -67,9 +82,10 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
         return;
     }
 
-    std::vector<int> scan_start_ind(num_scans, 0);
-    std::vector<int> scan_end_ind(num_scans, 0);
-  
+    ////////////////
+    // Preprocess //
+    ////////////////
+
     // Parse data from PointCloud2
     double time_stamp = point_cloud_msg->header.stamp.toSec();
     pcl::PointCloud<pcl::PointXYZ> point_cloud_in;
@@ -185,16 +201,132 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
         
         // Classify a point by its scan_id 
         point_cloud_scans[scan_id].push_back(point);
-        
+
     }  // for (int i = 0; i < cloud_size; i++)
     
     // Change cloude_size to the number of points without noise
     cloud_size = cloud_size_denoised;
 
-    // TODO: Feature extraction
+    // Construct a new point cloud with denoised and sorted points and record the starting and ending index for each scan
+    std::vector<int> scan_start_id(1, curvature_area);
+    std::vector<int> scan_end_id;
+    unsigned accumulate_size;
+    pcl::PointCloud<PointType>::Ptr point_cloud(new pcl::PointCloud<PointType>());
+    for (std::vector<pcl::PointCloud<PointType> >::iterator iter = point_cloud_scans.begin(); iter != point_cloud_scans.end(); iter++) {
+        *point_cloud += *iter;
+        accumulate_size = point_cloud->points.size();
+        scan_start_id.push_back(accumulate_size + curvature_area);
+        scan_end_id.push_back(accumulate_size - curvature_area);
+    }
+    scan_start_id.erase(scan_start_id.end() - 1);
+ 
+    ////////////////////////
+    // Feature extraction //
+    ////////////////////////
+
+    // Calculate curvature
+    for (int i = curvature_area; i < cloud_size - curvature_area; i++) {
+        float dx = -2 * curvature_area * point_cloud->points[i].x;
+        float dy = -2 * curvature_area * point_cloud->points[i].y;
+        float dz = -2 * curvature_area * point_cloud->points[i].z;
+        for (int j = 0; j < curvature_area; j++) {
+            dx += point_cloud->points[i + j + 1].x + point_cloud->points[i - j - 1].x;
+            dy += point_cloud->points[i + j + 1].y + point_cloud->points[i - j - 1].y;
+            dz += point_cloud->points[i + j + 1].z + point_cloud->points[i - j - 1].z;
+        }
+        cloud_curvature[i] = dx * dx + dy * dy + dz * dz;
+        cloud_sort_id[i] = i;
+        cloud_avoid[i] = false;
+        cloud_label[i] = 0;  // ???
+    }
+
+    // Exclude points with bad quality
+    for (int i = curvature_area; i < cloud_size - curvature_area - 1; i++) {        
+        // Calculate the distance square from point i to the origin
+        float dist2 = point_cloud->points[i].x * point_cloud->points[i].x
+                    + point_cloud->points[i].y * point_cloud->points[i].y
+                    + point_cloud->points[i].z * point_cloud->points[i].z;
+        
+        // Calculate the distance square to the neighbor point at the positive direction
+        float dx_pos = point_cloud->points[i + 1].x - point_cloud->points[i].x;
+        float dy_pos = point_cloud->points[i + 1].y - point_cloud->points[i].y;
+        float dz_pos = point_cloud->points[i + 1].z - point_cloud->points[i].z;
+        float dist2_pos = dx_pos * dx_pos + dy_pos * dy_pos + dz_pos * dz_pos;
+        
+        // Calculate the distance square to the neighbor point at the negative direction
+        float dx_neg = point_cloud->points[i - 1].x - point_cloud->points[i].x;
+        float dy_neg = point_cloud->points[i - 1].y - point_cloud->points[i].y;
+        float dz_neg = point_cloud->points[i - 1].z - point_cloud->points[i].z;
+        float dist2_neg = dx_neg * dx_neg + dy_neg * dy_neg + dz_neg * dz_neg;     
+
+        // Exclude points on a surface patch which is roughly parallel to the laser beam
+        if (dist2_pos > threshold_parallel * dist2 && dist2_neg > threshold_parallel * dist2) {
+            cloud_avoid[i] = true;
+        }
+
+        // Exclude points on the boundary of an occluded region
+        if (dist2_pos > threshold_occluded) {
+            float depth_1 = sqrt(dist2);
+
+            // Calculate the distance from point i+1 to the origin
+            float depth_2 = sqrt(point_cloud->points[i + 1].x * point_cloud->points[i + 1].x +
+                                 point_cloud->points[i + 1].y * point_cloud->points[i + 1].y +
+                                 point_cloud->points[i + 1].z * point_cloud->points[i + 1].z);
+
+            if (depth_1 > depth_2) {
+                // Define distance from point i+1 to the auxiliary point
+                float dx_aux = point_cloud->points[i + 1].x - point_cloud->points[i].x * depth_2 / depth_1;
+                float dy_aux = point_cloud->points[i + 1].y - point_cloud->points[i].y * depth_2 / depth_1;
+                float dz_aux = point_cloud->points[i + 1].z - point_cloud->points[i].z * depth_2 / depth_1;
+                float dist_aux = sqrt(dx_aux * dx_aux + dy_aux * dy_aux + dz_aux * dz_aux);
+                
+                // If the auxiliary distance is below the threshold
+                if (dist_aux / depth_2 < threshold_occluded) {
+                    // Avoid points behind the obstacle (negative side)
+                    for (int j = 0; j < curvature_area + 1; j++) {
+                        cloud_avoid[i - j] = true;
+                    }
+                }
+            } else {  // depth_1 <= depth_2
+                // Define distance from point i to the auxiliary point
+                float dx_aux = point_cloud->points[i].x - point_cloud->points[i + 1].x * depth_1 / depth_2;
+                float dy_aux = point_cloud->points[i].y - point_cloud->points[i + 1].y * depth_1 / depth_2;
+                float dz_aux = point_cloud->points[i].z - point_cloud->points[i + 1].z * depth_1 / depth_2;
+                float dist_aux = sqrt(dx_aux * dx_aux + dy_aux * dy_aux + dz_aux * dz_aux);
+
+                // If the auxiliary distance is below the threshold
+                if (dist_aux / depth_1 < threshold_occluded) {
+                    // Avoid points behind the obstacle (positive side)
+                    for (int j = 0; j < curvature_area + 1; j++) {
+                        cloud_avoid[i + j + 1] = true;
+                    }
+                }
+            }
+        }
+
+    }  // for (int i = curvature_area; i < cloud_size - curvature_area - 1; i++)
+
+    // Find feature points
+    pcl::PointCloud<PointType> corner_points_sharp;
+    pcl::PointCloud<PointType> corner_points_less_sharp;
+    pcl::PointCloud<PointType> surf_points_flat;
+    pcl::PointCloud<PointType> surf_points_less_flat;
+
+    for (int scan = 0; scan < num_scans; scan++) {
+        // ???
+        pcl::PointCloud<PointType>::Ptr surf_points_less_flat_scan(new pcl::PointCloud<PointType>);
+        
+        for (int i = 0; i < cloud_partition; i++) {
+            // Divide the point cloud into cloud_partition region with index [sp, ep)
+            unsigned sp = (scan_start_id[scan] * (cloud_partition     - i) + scan_end_id[scan] *  i     ) / cloud_partition;
+            unsigned ep = (scan_start_id[scan] * (cloud_partition - 1 - i) + scan_end_id[scan] * (i + 1)) / cloud_partition;
+
+
+        }  // for (int i = 0; i < num_scans; i++)
+    }  // for (int scan = 0; scan < num_scans; scan++)
 
     // Debug
-    cout << endl << endl << endl;
+    ROS_INFO("END");
     
 
 }
