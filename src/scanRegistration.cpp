@@ -334,7 +334,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     point.intensity = scanID + scanPeriod * relTime;
 
     // Combine with IMU data
-    if (imuPointerLast >= 0) {
+    if (false) { ////////////////////////////////////////////
+    //if (imuPointerLast >= 0) {
       float pointTime = relTime * scanPeriod;
       while (imuPointerFront != imuPointerLast) {
         if (timeScanCur + pointTime < imuTime[imuPointerFront]) {
@@ -502,6 +503,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     }
   }
 
+    // Debug
+    ROS_INFO("END");
+    ////////////////////////////////////////////////////////
 
   pcl::PointCloud<PointType> cornerPointsSharp;
   pcl::PointCloud<PointType> cornerPointsLessSharp;
