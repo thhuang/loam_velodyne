@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <iterator>
+#include <string>
 #include <vector>
 
 #include <ros/ros.h>
@@ -14,7 +15,6 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-//#include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
 
@@ -50,6 +50,14 @@ inline float point_depth(PointType& p) {
 
 
 class DataRegistrar {
+    ros::NodeHandle& node;
+    ros::Publisher pub_point_cloud;
+    ros::Publisher pub_corner_points_sharp;
+    ros::Publisher pub_corner_points_less_sharp;
+    ros::Publisher pub_planar_points_flat;
+    ros::Publisher pub_planar_points_less_flat;
+    ros::Publisher pub_imu_trans;
+    std::string    frame_id;
     bool           system_initiated;
     unsigned       system_init_count;
     const unsigned system_delay;
@@ -72,8 +80,16 @@ class DataRegistrar {
     std::array<int,   80000> cloud_label;  // 2: sharp, 1: less sharp, 0: not defined, -1: flat (TODO: use enum)
 
 public:
-    DataRegistrar() 
-        : system_init_count(0), 
+    DataRegistrar(ros::NodeHandle& node) 
+        : node(node),
+          pub_point_cloud(node.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_2", 2)),
+          pub_corner_points_sharp(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_sharp", 2)),
+          pub_corner_points_less_sharp(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_less_sharp", 2)),
+          pub_planar_points_flat(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_flat", 2)),
+          pub_planar_points_less_flat(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_less_flat", 2)),
+          pub_imu_trans(node.advertise<sensor_msgs::PointCloud2>("/imu_trans", 5)),
+          frame_id("/camera"),
+          system_init_count(0), 
           system_delay(20), 
           system_initiated(false), 
           num_scans(16),  // Number of channel (Velodyne VLP-16)
@@ -447,12 +463,63 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
 
     }  // for (int scan = 0; scan < num_scans; scan++)
 
+    // Publish denoised point cloud message
     sensor_msgs::PointCloud2 point_cloud_out_msg;
     pcl::toROSMsg(*point_cloud, point_cloud_out_msg);
     point_cloud_out_msg.header.stamp = point_cloud_msg->header.stamp;
-    //point_cloud_out_msg.header.frame_id = frame_id;
+    point_cloud_out_msg.header.frame_id = frame_id;
+    pub_point_cloud.publish(point_cloud_out_msg);
+   
+    // Publish sharp edge point cloud message
+    sensor_msgs::PointCloud2 corner_points_sharp_msg;
+    pcl::toROSMsg(*point_cloud, corner_points_sharp_msg);
+    corner_points_sharp_msg.header.stamp = point_cloud_msg->header.stamp;
+    corner_points_sharp_msg.header.frame_id = frame_id;
+    pub_corner_points_sharp.publish(corner_points_sharp_msg);
     
+    // Publish less sharp edge point cloud message
+    sensor_msgs::PointCloud2 corner_points_less_sharp_msg;
+    pcl::toROSMsg(*point_cloud, corner_points_less_sharp_msg);
+    corner_points_less_sharp_msg.header.stamp = point_cloud_msg->header.stamp;
+    corner_points_less_sharp_msg.header.frame_id = frame_id;
+    pub_corner_points_less_sharp.publish(corner_points_less_sharp_msg);
+
+    // Publish flat surface point cloud
+    sensor_msgs::PointCloud2 planar_points_flat_msg;
+    pcl::toROSMsg(*point_cloud, planar_points_flat_msg);
+    planar_points_flat_msg.header.stamp = point_cloud_msg->header.stamp;
+    planar_points_flat_msg.header.frame_id = frame_id;
+    pub_planar_points_flat.publish(planar_points_flat_msg);
+
+    // Publish less flat surface point cloud
+    sensor_msgs::PointCloud2 planar_points_less_flat_msg;
+    pcl::toROSMsg(*point_cloud, planar_points_less_flat_msg);
+    planar_points_less_flat_msg.header.stamp = point_cloud_msg->header.stamp;
+    planar_points_less_flat_msg.header.frame_id = frame_id;
+    pub_planar_points_less_flat.publish(planar_points_less_flat_msg);
     
+
+    // Publish IMU trans ???
+    // TODO: finish this
+    pcl::PointCloud<pcl::PointXYZ> imu_trans(4, 1);
+    imu_trans[0].x = 0;
+    imu_trans[0].y = 0;
+    imu_trans[0].z = 0;
+    imu_trans[1].x = 0;
+    imu_trans[1].y = 0;
+    imu_trans[1].z = 0;
+    imu_trans[2].x = 0;
+    imu_trans[2].y = 0;
+    imu_trans[2].z = 0;
+    imu_trans[3].x = 0;
+    imu_trans[3].y = 0;
+    imu_trans[3].z = 0;
+    sensor_msgs::PointCloud2 imu_trans_msg;
+    pcl::toROSMsg(imu_trans, imu_trans_msg);
+    imu_trans_msg.header.stamp = point_cloud_msg->header.stamp;
+    imu_trans_msg.header.frame_id = frame_id;
+    pub_imu_trans.publish(imu_trans_msg);
+
     // Debug
     ROS_INFO("END\n\n\n\n");
 
@@ -469,7 +536,7 @@ int main(int argc, char** argv) {
     ros::init(argc, argv, "data_registration");
     ros::NodeHandle node;
 
-    DataRegistrar data_registrar;
+    DataRegistrar data_registrar(node);
 
     /////////////////
     // Subscribers //
