@@ -18,10 +18,6 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
 
-#include <iostream>
-using std::cout;
-using std::endl;
-
 
 typedef pcl::PointXYZI PointType;
 
@@ -109,6 +105,9 @@ public:
         
     void point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr& point_cloud_msg);
     void imu_callback(const sensor_msgs::Imu::ConstPtr& imu_msg);
+
+private:
+    DataRegistrar();
 };
 
 
@@ -519,10 +518,6 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
     imu_trans_msg.header.stamp = point_cloud_msg->header.stamp;
     imu_trans_msg.header.frame_id = frame_id;
     pub_imu_trans.publish(imu_trans_msg);
-
-    // Debug
-    ROS_INFO("END\n\n\n\n");
-
 }
 
 
