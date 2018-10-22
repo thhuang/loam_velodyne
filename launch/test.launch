@@ -9,6 +9,10 @@
   </node>
 
   <node pkg="loam_velodyne" type="laserOdometry" name="laserOdometry" output="screen" respawn="true">
+    <remap from="/laser_cloud_sharp" to="/edge_points_sharp"/>
+    <remap from="/laser_cloud_less_sharp" to="/edge_points_less_sharp"/>
+    <remap from="/laser_cloud_flat" to="/planar_points_flat"/>
+    <remap from="/laser_cloud_less_flat" to="/planar_points_less_flat"/>
   </node>
 
   <node pkg="loam_velodyne" type="laserMapping" name="laserMapping" output="screen"/>

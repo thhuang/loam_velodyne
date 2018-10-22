@@ -52,8 +52,8 @@ inline float point_depth(PointType& p) {
 class DataRegistrar {
     ros::NodeHandle& node;
     ros::Publisher pub_point_cloud;
-    ros::Publisher pub_corner_points_sharp;
-    ros::Publisher pub_corner_points_less_sharp;
+    ros::Publisher pub_edge_points_sharp;
+    ros::Publisher pub_edge_points_less_sharp;
     ros::Publisher pub_planar_points_flat;
     ros::Publisher pub_planar_points_less_flat;
     ros::Publisher pub_imu_trans;
@@ -83,10 +83,10 @@ public:
     DataRegistrar(ros::NodeHandle& node) 
         : node(node),
           pub_point_cloud(node.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_2", 2)),
-          pub_corner_points_sharp(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_sharp", 2)),
-          pub_corner_points_less_sharp(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_less_sharp", 2)),
-          pub_planar_points_flat(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_flat", 2)),
-          pub_planar_points_less_flat(node.advertise<sensor_msgs::PointCloud2>("/laser_cloud_less_flat", 2)),
+          pub_edge_points_sharp(node.advertise<sensor_msgs::PointCloud2>("/edge_points_sharp", 2)),
+          pub_edge_points_less_sharp(node.advertise<sensor_msgs::PointCloud2>("/edge_points_less_sharp", 2)),
+          pub_planar_points_flat(node.advertise<sensor_msgs::PointCloud2>("/planar_points_flat", 2)),
+          pub_planar_points_less_flat(node.advertise<sensor_msgs::PointCloud2>("/planar_points_less_flat", 2)),
           pub_imu_trans(node.advertise<sensor_msgs::PointCloud2>("/imu_trans", 5)),
           frame_id("/camera"),
           system_init_count(0), 
@@ -338,8 +338,8 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
     }  // for (int i = curvature_area; i < cloud_size - curvature_area - 1; i++)
 
     // Find feature points
-    pcl::PointCloud<PointType> corner_points_sharp;
-    pcl::PointCloud<PointType> corner_points_less_sharp;
+    pcl::PointCloud<PointType> edge_points_sharp;
+    pcl::PointCloud<PointType> edge_points_less_sharp;
     pcl::PointCloud<PointType> planar_points_flat;
     pcl::PointCloud<PointType> planar_points_less_flat;
 
@@ -376,12 +376,12 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     if (edge_picked_num <= edge_sharp_num) {
                         // Top edge_sharp_num largest curvature points
                         cloud_label[*id_iter] = 2;
-                        corner_points_sharp.push_back(point_cloud->points[*id_iter]);
-                        corner_points_less_sharp.push_back(point_cloud->points[*id_iter]);
+                        edge_points_sharp.push_back(point_cloud->points[*id_iter]);
+                        edge_points_less_sharp.push_back(point_cloud->points[*id_iter]);
                     } else if (edge_picked_num <= edge_less_sharp_num) {
                         // Top edge_less_sharp_num largest curvature points
                         cloud_label[*id_iter] = 1;
-                        corner_points_less_sharp.push_back(point_cloud->points[*id_iter]);
+                        edge_points_less_sharp.push_back(point_cloud->points[*id_iter]);
                     } else {
                         break;
                     }
@@ -471,18 +471,18 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
     pub_point_cloud.publish(point_cloud_out_msg);
    
     // Publish sharp edge point cloud message
-    sensor_msgs::PointCloud2 corner_points_sharp_msg;
-    pcl::toROSMsg(corner_points_sharp, corner_points_sharp_msg);
-    corner_points_sharp_msg.header.stamp = point_cloud_msg->header.stamp;
-    corner_points_sharp_msg.header.frame_id = frame_id;
-    pub_corner_points_sharp.publish(corner_points_sharp_msg);
+    sensor_msgs::PointCloud2 edge_points_sharp_msg;
+    pcl::toROSMsg(edge_points_sharp, edge_points_sharp_msg);
+    edge_points_sharp_msg.header.stamp = point_cloud_msg->header.stamp;
+    edge_points_sharp_msg.header.frame_id = frame_id;
+    pub_edge_points_sharp.publish(edge_points_sharp_msg);
     
     // Publish less sharp edge point cloud message
-    sensor_msgs::PointCloud2 corner_points_less_sharp_msg;
-    pcl::toROSMsg(corner_points_less_sharp, corner_points_less_sharp_msg);
-    corner_points_less_sharp_msg.header.stamp = point_cloud_msg->header.stamp;
-    corner_points_less_sharp_msg.header.frame_id = frame_id;
-    pub_corner_points_less_sharp.publish(corner_points_less_sharp_msg);
+    sensor_msgs::PointCloud2 edge_points_less_sharp_msg;
+    pcl::toROSMsg(edge_points_less_sharp, edge_points_less_sharp_msg);
+    edge_points_less_sharp_msg.header.stamp = point_cloud_msg->header.stamp;
+    edge_points_less_sharp_msg.header.frame_id = frame_id;
+    pub_edge_points_less_sharp.publish(edge_points_less_sharp_msg);
 
     // Publish flat surface point cloud
     sensor_msgs::PointCloud2 planar_points_flat_msg;
