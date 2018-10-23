@@ -18,8 +18,8 @@ using std::cout;
 using std::endl;
 
 
-typedef pcl::PointXYZI PointType;
-
+using pcl::PointXYZI;
+using pcl::PointXYZ;
 
 class OdometryEstimator {
     ros::NodeHandle& node;
@@ -28,35 +28,36 @@ class OdometryEstimator {
     std::string    camera_frame_id;
     std::string    camera_init_frame_id;
     std::string    camera_odom_frame_id;
-    pcl::PointCloud<PointType>::Ptr     point_cloud;
-    pcl::PointCloud<PointType>::Ptr     edge_points_sharp;
-    pcl::PointCloud<PointType>::Ptr     edge_points_less_sharp;
-    pcl::PointCloud<PointType>::Ptr     planar_points_flat;
-    pcl::PointCloud<PointType>::Ptr     planar_points_less_flat;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr imu_trans;
-    pcl::PointCloud<PointType>::Ptr     edge_points_last;
-    pcl::PointCloud<PointType>::Ptr     planar_points_last;
-    pcl::KdTreeFLANN<PointType>::Ptr    kdtree_edge_points_last;
-    pcl::KdTreeFLANN<PointType>::Ptr    kdtree_planar_points_last;
-    bool system_initialized;
-    bool new_point_cloud;
-    bool new_edge_points_sharp;
-    bool new_edge_points_less_sharp;
-    bool new_planar_points_flat;
-    bool new_planar_points_less_flat;
-    bool new_imu_trans;
-    int  num_edge_points_last;
-    int  num_planar_points_last;
+    pcl::PointCloud<PointXYZI>::Ptr  point_cloud;
+    pcl::PointCloud<PointXYZI>::Ptr  edge_points_sharp;
+    pcl::PointCloud<PointXYZI>::Ptr  edge_points_less_sharp;
+    pcl::PointCloud<PointXYZI>::Ptr  planar_points_flat;
+    pcl::PointCloud<PointXYZI>::Ptr  planar_points_less_flat;
+    pcl::PointCloud<PointXYZ>::Ptr   imu_trans;
+    pcl::PointCloud<PointXYZI>::Ptr  edge_points_last;
+    pcl::PointCloud<PointXYZI>::Ptr  planar_points_last;
+    pcl::KdTreeFLANN<PointXYZI>::Ptr kdtree_edge_points_last;
+    pcl::KdTreeFLANN<PointXYZI>::Ptr kdtree_planar_points_last;
+    bool   system_initialized;
+    bool   new_point_cloud;
+    bool   new_edge_points_sharp;
+    bool   new_edge_points_less_sharp;
+    bool   new_planar_points_flat;
+    bool   new_planar_points_less_flat;
+    bool   new_imu_trans;
+    int    num_edge_points_last;
+    int    num_planar_points_last;
     double time_point_cloud;
     double time_edge_points_sharp;
     double time_edge_points_less_sharp;
     double time_planar_points_flat;
     double time_planar_points_less_flat;
     double time_imu_trans;
-    const int num_skip_frame;
-    const int min_edge_point_threshold;
-    const int min_planar_point_threshold;
-    const int max_lm_iteration;
+    const float scan_period;
+    const int   num_skip_frame;
+    const int   min_edge_point_threshold;
+    const int   min_planar_point_threshold;
+    const int   max_lm_iteration;
 
 public:
     OdometryEstimator(ros::NodeHandle& node) 
@@ -66,17 +67,18 @@ public:
           camera_frame_id("/camera"),
           camera_init_frame_id("/camera_init"),
           camera_odom_frame_id("/camera_odom"),
-          point_cloud(new pcl::PointCloud<PointType>()),
-          edge_points_sharp(new pcl::PointCloud<PointType>()),
-          edge_points_less_sharp(new pcl::PointCloud<PointType>()),
-          planar_points_flat(new pcl::PointCloud<PointType>()),
-          planar_points_less_flat(new pcl::PointCloud<PointType>()),
-          imu_trans(new pcl::PointCloud<pcl::PointXYZ>()),
-          edge_points_last(new pcl::PointCloud<PointType>()),
-          planar_points_last(new pcl::PointCloud<PointType>()),
-          kdtree_edge_points_last(new pcl::KdTreeFLANN<PointType>()),
-          kdtree_planar_points_last(new pcl::KdTreeFLANN<PointType>()),
+          point_cloud(new pcl::PointCloud<PointXYZI>()),
+          edge_points_sharp(new pcl::PointCloud<PointXYZI>()),
+          edge_points_less_sharp(new pcl::PointCloud<PointXYZI>()),
+          planar_points_flat(new pcl::PointCloud<PointXYZI>()),
+          planar_points_less_flat(new pcl::PointCloud<PointXYZI>()),
+          imu_trans(new pcl::PointCloud<PointXYZ>()),
+          edge_points_last(new pcl::PointCloud<PointXYZI>()),
+          planar_points_last(new pcl::PointCloud<PointXYZI>()),
+          kdtree_edge_points_last(new pcl::KdTreeFLANN<PointXYZI>()),
+          kdtree_planar_points_last(new pcl::KdTreeFLANN<PointXYZI>()),
           system_initialized(false),
+          scan_period(0.1),  // Inverse of the scan rate which is 10 Hz (Velodyne VLP-16)
           new_point_cloud(false),
           new_edge_points_sharp(false),
           new_edge_points_less_sharp(false),
@@ -101,6 +103,7 @@ public:
 
 private:    
     OdometryEstimator();
+    void reproject_to_start(const PointXYZI& point_in, PointXYZI& point_out);
     bool new_data_received();
     void reset();
     void initialize();
@@ -189,6 +192,14 @@ void OdometryEstimator::imu_trans_callback(const sensor_msgs::PointCloud2ConstPt
     
     // Update the flag
     new_imu_trans = true;
+}
+
+
+void OdometryEstimator::reproject_to_start(const PointXYZI& point_in, PointXYZI& point_out) {
+    // Get the reletive time
+    float rel_time = (1 / scan_period) * (point_in.intensity - int(point_in.intensity));
+
+    
 }
 
 
@@ -282,8 +293,8 @@ void OdometryEstimator::process() {
     // L-M optimization
     for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++) {
         // Process edge points
-        
-        
+       
+
         // Process planar points
 
 
