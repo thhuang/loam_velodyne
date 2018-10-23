@@ -19,8 +19,8 @@
 #include <pcl/kdtree/kdtree_flann.h>
 
 
-typedef pcl::PointXYZI PointXYZI;
-typedef pcl::PointXYZ  PointXYZ;
+using pcl::PointXYZI;
+using pcl::PointXYZ;
 
 
 inline double rad2deg(double radians) {
