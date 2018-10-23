@@ -19,7 +19,8 @@
 #include <pcl/kdtree/kdtree_flann.h>
 
 
-typedef pcl::PointXYZI PointType;
+typedef pcl::PointXYZI PointXYZI;
+typedef pcl::PointXYZ  PointXYZ;
 
 
 inline double rad2deg(double radians) {
@@ -32,7 +33,7 @@ inline double deg2rad(double degrees) {
 }
 
 
-inline float distance_square(PointType& p1, PointType& p2) {
+inline float distance_square(PointXYZI& p1, PointXYZI& p2) {
     float dx = p1.x - p2.x;
     float dy = p1.y - p2.y;
     float dz = p1.z - p2.z;
@@ -40,7 +41,7 @@ inline float distance_square(PointType& p1, PointType& p2) {
 }
 
 
-inline float point_depth(PointType& p) {
+inline float point_depth(PointXYZI& p) {
     return sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
 }
 
@@ -132,7 +133,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
 
     // Parse data from PointCloud2
     double time_stamp = point_cloud_msg->header.stamp.toSec();
-    pcl::PointCloud<pcl::PointXYZ> point_cloud_in;
+    pcl::PointCloud<PointXYZ> point_cloud_in;
     pcl::fromROSMsg(*point_cloud_msg, point_cloud_in);
     std::vector<int> indices;
     pcl::removeNaNFromPointCloud(point_cloud_in, point_cloud_in, indices);
@@ -167,8 +168,8 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
 
     bool half_passed = false;
     int cloud_size_denoised = cloud_size;
-    PointType point;
-    std::vector<pcl::PointCloud<PointType> > point_cloud_scans(num_scans);
+    PointXYZI point;
+    std::vector<pcl::PointCloud<PointXYZI> > point_cloud_scans(num_scans);
     for (const auto& p : point_cloud_in.points) {
         point.x = p.x;
         point.y = p.y;
@@ -249,7 +250,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
     std::vector<int> scan_start_id(1, curvature_area);
     std::vector<int> scan_end_id;
     unsigned accumulate_size;
-    pcl::PointCloud<PointType>::Ptr point_cloud(new pcl::PointCloud<PointType>());
+    pcl::PointCloud<PointXYZI>::Ptr point_cloud(new pcl::PointCloud<PointXYZI>());
     for (auto iter = point_cloud_scans.begin(); iter != point_cloud_scans.end(); iter++) {
         *point_cloud += *iter;
         accumulate_size = point_cloud->points.size();
@@ -337,14 +338,14 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
     }  // for (int i = curvature_area; i < cloud_size - curvature_area - 1; i++)
 
     // Find feature points
-    pcl::PointCloud<PointType> edge_points_sharp;
-    pcl::PointCloud<PointType> edge_points_less_sharp;
-    pcl::PointCloud<PointType> planar_points_flat;
-    pcl::PointCloud<PointType> planar_points_less_flat;
+    pcl::PointCloud<PointXYZI> edge_points_sharp;
+    pcl::PointCloud<PointXYZI> edge_points_less_sharp;
+    pcl::PointCloud<PointXYZI> planar_points_flat;
+    pcl::PointCloud<PointXYZI> planar_points_less_flat;
 
     for (int scan = 0; scan < num_scans; scan++) {
         // Container for downsampling use
-        pcl::PointCloud<PointType>::Ptr planar_points_less_flat_scan(new pcl::PointCloud<PointType>);
+        pcl::PointCloud<PointXYZI>::Ptr planar_points_less_flat_scan(new pcl::PointCloud<PointXYZI>);
 
         for (int i = 0; i < cloud_partition; i++) {
             // Divide the point cloud into cloud_partition region with index [sp, ep)
@@ -389,16 +390,16 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     // Exclude neighbor points within exclude_neighbor_num and exclude_neighbor_cutoff
                     cloud_avoid[*id_iter] = true;
                     for (int j = 0; j < exclude_neighbor_num; j++) {
-                        PointType p1 = point_cloud->points[*id_iter + j];
-                        PointType p2 = point_cloud->points[*id_iter + j + 1];
+                        PointXYZI p1 = point_cloud->points[*id_iter + j];
+                        PointXYZI p2 = point_cloud->points[*id_iter + j + 1];
                         if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
                         cloud_avoid[*id_iter + j + 1] = true;
                     }
                     for (int j = 0; j < exclude_neighbor_num; j++) {
-                        PointType p1 = point_cloud->points[*id_iter - j];
-                        PointType p2 = point_cloud->points[*id_iter - j - 1];
+                        PointXYZI p1 = point_cloud->points[*id_iter - j];
+                        PointXYZI p2 = point_cloud->points[*id_iter - j - 1];
                         if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
@@ -424,16 +425,16 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     // Exclude neighbor points within exclude_neighbor_num and exclude_neighbor_cutoff
                     cloud_avoid[*id_iter] = true;
                     for (int j = 0; j < exclude_neighbor_num; j++) {
-                        PointType p1 = point_cloud->points[*id_iter + j];
-                        PointType p2 = point_cloud->points[*id_iter + j + 1];
+                        PointXYZI p1 = point_cloud->points[*id_iter + j];
+                        PointXYZI p2 = point_cloud->points[*id_iter + j + 1];
                         if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
                         cloud_avoid[*id_iter + j + 1] = true;
                     }
                     for (int j = 0; j < exclude_neighbor_num; j++) {
-                        PointType p1 = point_cloud->points[*id_iter - j];
-                        PointType p2 = point_cloud->points[*id_iter - j - 1];
+                        PointXYZI p1 = point_cloud->points[*id_iter - j];
+                        PointXYZI p2 = point_cloud->points[*id_iter - j - 1];
                         if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
@@ -451,8 +452,8 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
         }  // for (int i = 0; i < num_scans; i++)
             
         // Downsampling with a VoxelGrid filter
-        pcl::PointCloud<PointType> planar_points_less_flat_scan_filtered;
-        pcl::VoxelGrid<PointType> voxel_grid_filter;
+        pcl::PointCloud<PointXYZI> planar_points_less_flat_scan_filtered;
+        pcl::VoxelGrid<PointXYZI> voxel_grid_filter;
         voxel_grid_filter.setInputCloud(planar_points_less_flat_scan);
         voxel_grid_filter.setLeafSize(filter_leaf_size, filter_leaf_size, filter_leaf_size);
         voxel_grid_filter.filter(planar_points_less_flat_scan_filtered);
@@ -500,7 +501,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
 
     // Publish IMU trans ???
     // TODO: finish this
-    pcl::PointCloud<pcl::PointXYZ> imu_trans(4, 1);
+    pcl::PointCloud<PointXYZ> imu_trans(4, 1);
     imu_trans[0].x = 0;
     imu_trans[0].y = 0;
     imu_trans[0].z = 0;
