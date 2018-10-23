@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+
+<launch>
+    <node pkg="slam3d" type="odometry_estimation" name="odometry_estimation" output="screen"/>
+</launch>
