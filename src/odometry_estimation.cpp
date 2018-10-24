@@ -377,7 +377,7 @@ void OdometryEstimator::process() {
                     
                     // Define helper variables
                     float point_l_squared_distance;
-                    float min_point_square_distance = nearest_neighbor_cutoff;
+                    float min_point_squared_distance = nearest_neighbor_cutoff;
 
                     // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
                     for (int l = point_j_id + 1; l < num_edge_points_last; l++) {
@@ -390,9 +390,29 @@ void OdometryEstimator::process() {
 
                         // Calculate squared distance between [i] and the candidate point
                         point_l_squared_distance = squared_distance(edge_points_last->points[l], point_i);
+                    
+                        if (point_l_squared_distance < min_point_squared_distance) {
+                            min_point_squared_distance = point_l_squared_distance;
+                            point_l_id = l;
+                        }
                     }
-                
-                }
+                    for (int l = point_j_id - 1; l >= 0; l--) {
+                        // Verify whether the point is in the lower consecutive scan to the scan of [j]
+                        if (int(edge_points_last->points[l].intensity) < point_j_scan_id - 2) {
+                            break;
+                        } else if (int(edge_points_last->points[l].intensity) != point_j_scan_id - 2) {
+                            continue;
+                        }
+
+                        // Calculate squared distance between [i] and the candidate point
+                        point_l_squared_distance = squared_distance(edge_points_last->points[l], point_i);
+                    
+                        if (point_l_squared_distance < min_point_squared_distance) {
+                            min_point_squared_distance = point_l_squared_distance;
+                            point_l_id = l;
+                        }
+                    } 
+                }  // if (point_j_square_distance < nearest_neighbor_cutoff)
 
             }  // if (iter_count % transformation_recalculate_iteration == 0)
 
