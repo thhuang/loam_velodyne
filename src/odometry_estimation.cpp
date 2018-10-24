@@ -1,6 +1,10 @@
 // TH Huang
 
+#include <array>
 #include <vector>
+
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <ros/ros.h>
 
@@ -17,9 +21,25 @@
 using std::cout;
 using std::endl;
 
-
 using pcl::PointXYZI;
 using pcl::PointXYZ;
+
+
+inline float squared_distance(PointXYZI& p1, PointXYZI& p2) {
+    float dx = p1.x - p2.x;
+    float dy = p1.y - p2.y;
+    float dz = p1.z - p2.z;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+
+inline Eigen::Quaternionf euler_to_quaternion(const float roll, const float pitch, const float yaw) {
+  Eigen::Quaternionf q = Eigen::AngleAxisf(roll,  Eigen::Vector3f::UnitX())
+                       * Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY())
+                       * Eigen::AngleAxisf(yaw,   Eigen::Vector3f::UnitZ());                         
+  return q;                                
+}
+
 
 class OdometryEstimator {
     ros::NodeHandle& node;
@@ -38,6 +58,8 @@ class OdometryEstimator {
     pcl::PointCloud<PointXYZI>::Ptr  planar_points_last;
     pcl::KdTreeFLANN<PointXYZI>::Ptr kdtree_edge_points_last;
     pcl::KdTreeFLANN<PointXYZI>::Ptr kdtree_planar_points_last;
+    std::array<float, 6> transform;
+    std::array<float, 6> transform_sum;
     bool   system_initialized;
     bool   new_point_cloud;
     bool   new_edge_points_sharp;
@@ -58,6 +80,8 @@ class OdometryEstimator {
     const int   min_edge_point_threshold;
     const int   min_planar_point_threshold;
     const int   max_lm_iteration;
+    const int   transformation_recalculate_iteration;
+    const float nearest_neighbor_cutoff;
 
 public:
     OdometryEstimator(ros::NodeHandle& node) 
@@ -90,8 +114,13 @@ public:
           num_skip_frame(1),
           min_edge_point_threshold(10),
           min_planar_point_threshold(100),
-          max_lm_iteration(25)
-        {}
+          max_lm_iteration(25),
+          transformation_recalculate_iteration(5),
+          nearest_neighbor_cutoff(25)
+        { 
+          transform.fill(0);
+          transform_sum.fill(0); 
+        }
     
     void spin();
     void point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr& point_cloud_msg);
@@ -103,7 +132,7 @@ public:
 
 private:    
     OdometryEstimator();
-    void reproject_to_start(const PointXYZI& point_in, PointXYZI& point_out);
+    void reproject_to_start(const PointXYZI& pi, PointXYZI& po);
     bool new_data_received();
     void reset();
     void initialize();
@@ -195,11 +224,33 @@ void OdometryEstimator::imu_trans_callback(const sensor_msgs::PointCloud2ConstPt
 }
 
 
-void OdometryEstimator::reproject_to_start(const PointXYZI& point_in, PointXYZI& point_out) {
+void OdometryEstimator::reproject_to_start(const PointXYZI& pi, PointXYZI& po) {
     // Get the reletive time
-    float rel_time = (1 / scan_period) * (point_in.intensity - int(point_in.intensity));
+    float rel_time = (1 / scan_period) * (pi.intensity - int(pi.intensity));
 
+    // Get the transformation information
+    float rx = rel_time * transform[0];
+    float ry = rel_time * transform[1];
+    float rz = rel_time * transform[2];
+    float tx = rel_time * transform[3];
+    float ty = rel_time * transform[4];
+    float tz = rel_time * transform[5];
+
+    // Define transformation matrix
+    Eigen::Quaternionf q = euler_to_quaternion(rx, ry, rz);
+    Eigen::Isometry3f transformation_matrix = Eigen::Isometry3f::Identity();  
+    transformation_matrix.rotate(q);
+    transformation_matrix.pretranslate(Eigen::Vector3f(tx, ty, tz));
+
+    // Reproject to the start of the sweep
+    Eigen::Vector3f point_in(pi.x, pi.y, pi.z);
+    Eigen::Vector3f point_out = transformation_matrix.inverse() * point_in;
     
+    // Assign to the output
+    po.x = point_out[0];
+    po.y = point_out[1];
+    po.z = point_out[2];
+    po.intensity = pi.intensity;
 }
 
 
@@ -287,18 +338,75 @@ void OdometryEstimator::process() {
     // Odometry Estimation //
     /////////////////////////
 
+    // Calculate feature size
     int num_edge_points_sharp = edge_points_sharp->points.size();
     int num_planar_points_flat = planar_points_flat->points.size();
         
+    // Define helper variables
+    std::vector<int> point_search_id;
+    std::vector<float> point_search_square_distance;
+
     // L-M optimization
     for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++) {
-        // Process edge points
-       
 
+        // Define a variable for the selected point [i]
+        PointXYZI point_i;
+        
+        //laserCloudOri->clear();
+        //coeffSel->clear();
+
+        // Process edge points
+        // for (int i = 0; i < num_edge_points_sharp; i++) {
+        for (auto iter_i = edge_points_sharp->begin(); iter_i != edge_points_sharp->end(); iter_i++) {
+            
+            // Reproject the selected point [i] to the start of the sweep
+            // reproject_to_start(edge_points_sharp->points[i], point_i);
+            reproject_to_start(*iter_i, point_i);
+            // Recalculate the transformation after transformation_recalculate_iteration iterations
+            if (iter_count % transformation_recalculate_iteration == 0) {
+                
+                // Find the nearest neighbor [j]
+                kdtree_edge_points_last->nearestKSearch(point_i, 1, point_search_id, point_search_square_distance);
+                int point_j_id = point_search_id[0];
+                int point_j_square_distance = point_search_square_distance[0];
+                int point_j_scan_id = int(edge_points_last->points[point_j_id].intensity);
+
+                // Find closest neighbor of [i] in the two consecutive scans to the scan of [j] as [l]
+                int point_l_id = -1;
+                if (point_j_square_distance < nearest_neighbor_cutoff) {
+                    
+                    // Define helper variables
+                    float point_l_squared_distance;
+                    float min_point_square_distance = nearest_neighbor_cutoff;
+
+                    // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
+                    for (int l = point_j_id + 1; l < num_edge_points_last; l++) {
+                        // Verify whether the point is in the upper consecutive scan to the scan of [j]
+                        if (int(edge_points_last->points[l].intensity) > point_j_scan_id + 2) {
+                            break;
+                        } else if (int(edge_points_last->points[l].intensity) != point_j_scan_id + 2) {
+                            continue;
+                        }
+
+                        // Calculate squared distance between [i] and the candidate point
+                        point_l_squared_distance = squared_distance(edge_points_last->points[l], point_i);
+                    }
+                
+                }
+
+            }  // if (iter_count % transformation_recalculate_iteration == 0)
+
+
+
+        }  // for (auto iter_i = edge_points_sharp->begin(); iter_i != edge_points_sharp->end(); iter_i++)
+        
+        
+        
+        
         // Process planar points
 
 
-    }
+    }  // for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++)
 
 
     // Publish result

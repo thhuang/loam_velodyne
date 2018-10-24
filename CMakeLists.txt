@@ -19,6 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
+find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -111,7 +112,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES slam3d
   CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy sensor_msgs std_msgs tf
-  DEPENDS PCL OpenCV
+  DEPENDS PCL OpenCV EIGEN3
 )
 
 ###########
@@ -123,6 +124,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
   )
 
