@@ -33,7 +33,7 @@ inline double deg2rad(double degrees) {
 }
 
 
-inline float distance_square(PointXYZI& p1, PointXYZI& p2) {
+inline float squared_distance(PointXYZI& p1, PointXYZI& p2) {
     float dx = p1.x - p2.x;
     float dy = p1.y - p2.y;
     float dz = p1.z - p2.z;
@@ -281,16 +281,16 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
 
     // Exclude points with bad quality
     for (int i = curvature_area; i < cloud_size - curvature_area - 1; i++) {        
-        // Calculate the distance square from point i to the origin
+        // Calculate the squared distance from point i to the origin
         float dist2 = point_cloud->points[i].x * point_cloud->points[i].x
                     + point_cloud->points[i].y * point_cloud->points[i].y
                     + point_cloud->points[i].z * point_cloud->points[i].z;
         
-        // Calculate the distance square to the neighbor point at the positive direction
-        float dist2_pos = distance_square(point_cloud->points[i], point_cloud->points[i + 1]);
+        // Calculate the squared distance to the neighbor point at the positive direction
+        float dist2_pos = squared_distance(point_cloud->points[i], point_cloud->points[i + 1]);
 
-        // Calculate the distance square to the neighbor point at the negative direction
-        float dist2_neg = distance_square(point_cloud->points[i], point_cloud->points[i - 1]);     
+        // Calculate the squared distance to the neighbor point at the negative direction
+        float dist2_neg = squared_distance(point_cloud->points[i], point_cloud->points[i - 1]);     
 
         // Exclude points on a surface patch which is roughly parallel to the laser beam
         if (dist2_pos > threshold_parallel * dist2 && dist2_neg > threshold_parallel * dist2) {
@@ -392,7 +392,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     for (int j = 0; j < exclude_neighbor_num; j++) {
                         PointXYZI p1 = point_cloud->points[*id_iter + j];
                         PointXYZI p2 = point_cloud->points[*id_iter + j + 1];
-                        if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
+                        if (squared_distance(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
                         cloud_avoid[*id_iter + j + 1] = true;
@@ -400,7 +400,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     for (int j = 0; j < exclude_neighbor_num; j++) {
                         PointXYZI p1 = point_cloud->points[*id_iter - j];
                         PointXYZI p2 = point_cloud->points[*id_iter - j - 1];
-                        if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
+                        if (squared_distance(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
                         cloud_avoid[*id_iter - j - 1] = true;
@@ -427,7 +427,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     for (int j = 0; j < exclude_neighbor_num; j++) {
                         PointXYZI p1 = point_cloud->points[*id_iter + j];
                         PointXYZI p2 = point_cloud->points[*id_iter + j + 1];
-                        if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
+                        if (squared_distance(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
                         cloud_avoid[*id_iter + j + 1] = true;
@@ -435,7 +435,7 @@ void DataRegistrar::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr&
                     for (int j = 0; j < exclude_neighbor_num; j++) {
                         PointXYZI p1 = point_cloud->points[*id_iter - j];
                         PointXYZI p2 = point_cloud->points[*id_iter - j - 1];
-                        if (distance_square(p1, p2) > exclude_neighbor_cutoff) {
+                        if (squared_distance(p1, p2) > exclude_neighbor_cutoff) {
                             break;
                         }
                         cloud_avoid[*id_iter - j - 1] = true;
