@@ -575,16 +575,16 @@ int main(int argc, char** argv)
                   }
                 }
                 
-                //cout << "closestPointScan: " << closestPointScan << endl;
-                //cout << "laserCloudCornerLast->points[j].intensity: " << laserCloudCornerLast->points[minPointInd2].intensity << endl;
-                //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan + 2) << endl;
-                //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan - 2) << endl;
-                //cout << "minPointInd2: " << minPointInd2 << endl;
-                //cout << "minPointSqDis2: " << minPointSqDis2 << endl;
-                //cout << endl;
-              
               }  // if (pointSearchSqDis[0] < 25)
 
+              //cout << "closestPointScan: " << closestPointScan << endl;
+              //cout << "laserCloudCornerLast->points[j].intensity: " << laserCloudCornerLast->points[minPointInd2].intensity << endl;
+              //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan + 2) << endl;
+              //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan - 2) << endl;
+              //cout << "minPointInd2: " << minPointInd2 << endl;
+              //cout << "minPointSqDis2: " << minPointSqDis2 << endl;
+              //cout << endl;
+              
               pointSearchCornerInd1[i] = closestPointInd;
               pointSearchCornerInd2[i] = minPointInd2;
             }  // if (iterCount % 5 == 0)
