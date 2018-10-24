@@ -32,6 +32,9 @@
 
 #include <cmath>
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+
 #include <loam_velodyne/common.h>
 #include <nav_msgs/Odometry.h>
 #include <opencv/cv.h>
@@ -98,8 +101,19 @@ float imuRollLast = 0, imuPitchLast = 0, imuYawLast = 0;
 float imuShiftFromStartX = 0, imuShiftFromStartY = 0, imuShiftFromStartZ = 0;
 float imuVeloFromStartX = 0, imuVeloFromStartY = 0, imuVeloFromStartZ = 0;
 
+using std::cout;
+using std::endl;
+
+Eigen::Quaternionf euler_to_quaternion(const float roll, const float pitch, const float yaw) {
+  Eigen::Quaternionf q = Eigen::AngleAxisf(roll,  Eigen::Vector3f::UnitX())
+                       * Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY())
+                       * Eigen::AngleAxisf(yaw,   Eigen::Vector3f::UnitZ());                         
+  return q;                                
+}
+
 void TransformToStart(PointType const * const pi, PointType * const po)
 {
+  
   float s = 10 * (pi->intensity - int(pi->intensity));
 
   float rx = s * transform[0];
@@ -108,7 +122,7 @@ void TransformToStart(PointType const * const pi, PointType * const po)
   float tx = s * transform[3];
   float ty = s * transform[4];
   float tz = s * transform[5];
-
+/*
   float x1 = cos(rz) * (pi->x - tx) + sin(rz) * (pi->y - ty);
   float y1 = -sin(rz) * (pi->x - tx) + cos(rz) * (pi->y - ty);
   float z1 = (pi->z - tz);
@@ -120,6 +134,25 @@ void TransformToStart(PointType const * const pi, PointType * const po)
   po->x = cos(ry) * x2 - sin(ry) * z2;
   po->y = y2;
   po->z = sin(ry) * x2 + cos(ry) * z2;
+  po->intensity = pi->intensity;
+
+  cout << pi->x << "\t" << pi->y << "\t" << pi->z << endl;
+  cout << po->x << "\t" << po->y << "\t" << po->z << endl;
+*/
+  
+  Eigen::Vector3f point_in(pi->x, pi->y, pi->z);
+
+  Eigen::Quaternionf q = euler_to_quaternion(rx, ry, rz);
+  Eigen::Isometry3f transformation_matrix = Eigen::Isometry3f::Identity();  
+  transformation_matrix.rotate(q);
+  transformation_matrix.pretranslate(Eigen::Vector3f(tx, ty, tz));
+
+  Eigen::Vector3f point_out = transformation_matrix.inverse() * point_in;
+  //cout << point_out[0] << "\t" << point_out[1] << "\t" << point_out[2] << endl;
+  //cout << endl;
+  po->x = point_out[0];
+  po->y = point_out[1];
+  po->z = point_out[2];
   po->intensity = pi->intensity;
 }
 
@@ -359,6 +392,11 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "laserOdometry");
   ros::NodeHandle nh;
 
+  // Debug
+  if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug)  ) {
+    ros::console::notifyLoggerLevelsChanged();
+  }
+
   ros::Subscriber subCornerPointsSharp = nh.subscribe<sensor_msgs::PointCloud2>
                                          ("/laser_cloud_sharp", 2, laserCloudSharpHandler);
 
@@ -417,6 +455,8 @@ int main(int argc, char** argv)
         fabs(timeSurfPointsFlat - timeSurfPointsLessFlat) < 0.005 &&
         fabs(timeLaserCloudFullRes - timeSurfPointsLessFlat) < 0.005 &&
         fabs(timeImuTrans - timeSurfPointsLessFlat) < 0.005) {
+      
+      // Reset flags  
       newCornerPointsSharp = false;
       newCornerPointsLessSharp = false;
       newSurfPointsFlat = false;
@@ -425,13 +465,16 @@ int main(int argc, char** argv)
       newImuTrans = false;
 
       if (!systemInited) {
-        pcl::PointCloud<PointType>::Ptr laserCloudTemp = cornerPointsLessSharp;
-        cornerPointsLessSharp = laserCloudCornerLast;
-        laserCloudCornerLast = laserCloudTemp;
+        // Swap pointer
+        cornerPointsLessSharp.swap(laserCloudCornerLast);
+        // add by thhuang
+        laserCloudCornerLastNum = laserCloudCornerLast->points.size();
+        
 
-        laserCloudTemp = surfPointsLessFlat;
-        surfPointsLessFlat = laserCloudSurfLast;
-        laserCloudSurfLast = laserCloudTemp;
+        // Swap pointer
+        surfPointsLessFlat.swap(laserCloudSurfLast);
+        // add by thhuang
+        laserCloudSurfLastNum = laserCloudSurfLast->points.size();
 
         kdtreeCornerLast->setInputCloud(laserCloudCornerLast);
         kdtreeSurfLast->setInputCloud(laserCloudSurfLast);
@@ -464,11 +507,16 @@ int main(int argc, char** argv)
         pcl::removeNaNFromPointCloud(*cornerPointsSharp,*cornerPointsSharp, indices);
         int cornerPointsSharpNum = cornerPointsSharp->points.size();
         int surfPointsFlatNum = surfPointsFlat->points.size();
+        
+        // L-M optimization
         for (int iterCount = 0; iterCount < 25; iterCount++) {
           laserCloudOri->clear();
           coeffSel->clear();
 
+          // Process edge points
           for (int i = 0; i < cornerPointsSharpNum; i++) {
+            
+            // Reprojected selected point to the beginning of the sweep
             TransformToStart(&cornerPointsSharp->points[i], &pointSel);
 
             if (iterCount % 5 == 0) {
@@ -481,9 +529,14 @@ int main(int argc, char** argv)
                 int closestPointScan = int(laserCloudCornerLast->points[closestPointInd].intensity);
 
                 float pointSqDis, minPointSqDis2 = 25;
-                for (int j = closestPointInd + 1; j < cornerPointsSharpNum; j++) {
-                  if (int(laserCloudCornerLast->points[j].intensity) > closestPointScan + 2.5) {
+                // modify by thhuang
+                //for (int j = closestPointInd + 1; j < cornerPointsSharpNum; j++) {
+                for (int j = closestPointInd + 1; j < laserCloudCornerLastNum; j++) {
+                  if (int(laserCloudCornerLast->points[j].intensity) > closestPointScan + 2) {
                     break;
+                  // modify by thhuang
+                  } else if (int(laserCloudCornerLast->points[j].intensity) != closestPointScan + 2) {
+                    continue;
                   }
 
                   pointSqDis = (laserCloudCornerLast->points[j].x - pointSel.x) * 
@@ -501,8 +554,10 @@ int main(int argc, char** argv)
                   }
                 }
                 for (int j = closestPointInd - 1; j >= 0; j--) {
-                  if (int(laserCloudCornerLast->points[j].intensity) < closestPointScan - 2.5) {
+                  if (int(laserCloudCornerLast->points[j].intensity) < closestPointScan - 2) {
                     break;
+                  } else if (int(laserCloudCornerLast->points[j].intensity) != closestPointScan - 2) {
+                    continue;
                   }
 
                   pointSqDis = (laserCloudCornerLast->points[j].x - pointSel.x) * 
@@ -519,11 +574,20 @@ int main(int argc, char** argv)
                     }
                   }
                 }
-              }
+                
+                //cout << "closestPointScan: " << closestPointScan << endl;
+                //cout << "laserCloudCornerLast->points[j].intensity: " << laserCloudCornerLast->points[minPointInd2].intensity << endl;
+                //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan + 2) << endl;
+                //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan - 2) << endl;
+                //cout << "minPointInd2: " << minPointInd2 << endl;
+                //cout << "minPointSqDis2: " << minPointSqDis2 << endl;
+                //cout << endl;
+              
+              }  // if (pointSearchSqDis[0] < 25)
 
               pointSearchCornerInd1[i] = closestPointInd;
               pointSearchCornerInd2[i] = minPointInd2;
-            }
+            }  // if (iterCount % 5 == 0)
 
             if (pointSearchCornerInd2[i] >= 0) {
               tripod1 = laserCloudCornerLast->points[pointSearchCornerInd1[i]];
@@ -579,8 +643,9 @@ int main(int argc, char** argv)
                 coeffSel->push_back(coeff);
               }
             }
-          }
+          }  // for (int i = 0; i < cornerPointsSharpNum; i++)
 
+          // Process planar points
           for (int i = 0; i < surfPointsFlatNum; i++) {
             TransformToStart(&surfPointsFlat->points[i], &pointSel);
 
@@ -592,9 +657,14 @@ int main(int argc, char** argv)
                 int closestPointScan = int(laserCloudSurfLast->points[closestPointInd].intensity);
 
                 float pointSqDis, minPointSqDis2 = 25, minPointSqDis3 = 25;
-                for (int j = closestPointInd + 1; j < surfPointsFlatNum; j++) {
-                  if (int(laserCloudSurfLast->points[j].intensity) > closestPointScan + 2.5) {
+                // modify by thhuang
+                for (int j = closestPointInd + 1; j < laserCloudSurfLastNum; j++) {
+                //for (int j = closestPointInd + 1; j < surfPointsFlatNum; j++) {
+                  if (int(laserCloudSurfLast->points[j].intensity) > closestPointScan + 2) {
                     break;
+                  // modify by thhuang
+                  } else if (int(laserCloudSurfLast->points[j].intensity) != closestPointScan + 2) {
+                    continue;
                   }
 
                   pointSqDis = (laserCloudSurfLast->points[j].x - pointSel.x) * 
@@ -617,8 +687,11 @@ int main(int argc, char** argv)
                   }
                 }
                 for (int j = closestPointInd - 1; j >= 0; j--) {
-                  if (int(laserCloudSurfLast->points[j].intensity) < closestPointScan - 2.5) {
+                  if (int(laserCloudSurfLast->points[j].intensity) < closestPointScan - 2) {
                     break;
+                  // modify by thhuang
+                  } else if (int(laserCloudSurfLast->points[j].intensity) != closestPointScan - 2) {
+                    continue;
                   }
 
                   pointSqDis = (laserCloudSurfLast->points[j].x - pointSel.x) * 
@@ -689,7 +762,7 @@ int main(int argc, char** argv)
                 coeffSel->push_back(coeff);
               }
             }
-          }
+          }  // for (int i = 0; i < surfPointsFlatNum; i++)
 
           int pointSelNum = laserCloudOri->points.size();
           if (pointSelNum < 10) {
@@ -817,7 +890,7 @@ int main(int argc, char** argv)
             break;
           }
         }
-      }
+      }  // if (laserCloudCornerLastNum > 10 && laserCloudSurfLastNum > 100) {}
 
       float rx, ry, rz, tx, ty, tz;
       AccumulateRotation(transformSum[0], transformSum[1], transformSum[2], 
