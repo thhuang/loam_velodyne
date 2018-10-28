@@ -356,23 +356,25 @@ void OdometryEstimator::process() {
         //coeffSel->clear();
 
         // Process edge points
-        // for (int i = 0; i < num_edge_points_sharp; i++) {
-        for (auto iter_i = edge_points_sharp->begin(); iter_i != edge_points_sharp->end(); iter_i++) {
-            
+        for (int i = 0; i < num_edge_points_sharp; i++) {
             // Reproject the selected point [i] to the start of the sweep
-            // reproject_to_start(edge_points_sharp->points[i], point_i);
-            reproject_to_start(*iter_i, point_i);
+            reproject_to_start(edge_points_sharp->points[i], point_i);
+            
+            // Create containers for neighbor points [j] and [l]
+            std::array<int, 80000> point_j_id;
+            std::array<int, 80000> point_l_id;
+
             // Recalculate the transformation after transformation_recalculate_iteration iterations
             if (iter_count % transformation_recalculate_iteration == 0) {
                 
                 // Find the nearest neighbor [j]
                 kdtree_edge_points_last->nearestKSearch(point_i, 1, point_search_id, point_search_square_distance);
-                int point_j_id = point_search_id[0];
+                point_j_id[i] = point_search_id[0];
                 int point_j_square_distance = point_search_square_distance[0];
-                int point_j_scan_id = int(edge_points_last->points[point_j_id].intensity);
+                int point_j_scan_id = int(edge_points_last->points[point_j_id[i]].intensity);
 
-                // Find closest neighbor of [i] in the two consecutive scans to the scan of [j] as [l]
-                int point_l_id = -1;
+                // Find the nearest neighbor of [i] in the two consecutive scans to the scan of [j] as [l]
+                point_l_id[i] = -1;
                 if (point_j_square_distance < nearest_neighbor_cutoff) {
                     
                     // Define helper variables
@@ -380,7 +382,7 @@ void OdometryEstimator::process() {
                     float min_point_squared_distance = nearest_neighbor_cutoff;
 
                     // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
-                    for (int l = point_j_id + 1; l < num_edge_points_last; l++) {
+                    for (int l = point_j_id[i] + 1; l < num_edge_points_last; l++) {
                         // Verify whether the point is in the upper consecutive scan to the scan of [j]
                         if (int(edge_points_last->points[l].intensity) > point_j_scan_id + 2) {
                             break;
@@ -393,10 +395,10 @@ void OdometryEstimator::process() {
                     
                         if (point_l_squared_distance < min_point_squared_distance) {
                             min_point_squared_distance = point_l_squared_distance;
-                            point_l_id = l;
+                            point_l_id[i] = l;
                         }
                     }
-                    for (int l = point_j_id - 1; l >= 0; l--) {
+                    for (int l = point_j_id[i] - 1; l >= 0; l--) {
                         // Verify whether the point is in the lower consecutive scan to the scan of [j]
                         if (int(edge_points_last->points[l].intensity) < point_j_scan_id - 2) {
                             break;
@@ -409,17 +411,14 @@ void OdometryEstimator::process() {
                     
                         if (point_l_squared_distance < min_point_squared_distance) {
                             min_point_squared_distance = point_l_squared_distance;
-                            point_l_id = l;
+                            point_l_id[i] = l;
                         }
                     } 
                 }  // if (point_j_square_distance < nearest_neighbor_cutoff)
 
             }  // if (iter_count % transformation_recalculate_iteration == 0)
 
-
-
-        }  // for (auto iter_i = edge_points_sharp->begin(); iter_i != edge_points_sharp->end(); iter_i++)
-        
+        }  // for (int i = 0; i < num_edge_points_sharp; i++)
         
         
         
