@@ -349,8 +349,8 @@ void OdometryEstimator::process() {
     // L-M optimization
     for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++) {
 
-        // Define a variable for the selected point [i]
-        PointXYZI point_i;
+        // Define variables for the selected points [i], [j], [m]
+        PointXYZI point_i, point_j, point_l, point_m;
         
         //laserCloudOri->clear();
         //coeffSel->clear();
@@ -417,6 +417,30 @@ void OdometryEstimator::process() {
                 }  // if (point_j_square_distance < nearest_neighbor_cutoff)
 
             }  // if (iter_count % transformation_recalculate_iteration == 0)
+
+            // Calculate the distance from [i] to line (jl) if [l] is found
+            if (point_l_id[i] > 0) {
+                point_j = edge_points_last->points[point_j_id[i]];
+                point_l = edge_points_last->points[point_l_id[i]];
+
+                // Get vectors
+                Eigen::Vector3f v_ij(point_j.x - point_i.x, point_j.y - point_i.y, point_j.z - point_i.z);    
+                Eigen::Vector3f v_il(point_l.x - point_i.x, point_l.y - point_i.y, point_l.z - point_i.z);    
+                Eigen::Vector3f v_jl(point_l.x - point_j.x, point_l.y - point_j.y, point_l.z - point_j.z);    
+
+                // Calculate distance
+                float area = v_ij.cross(v_il).norm();
+                float dist = area / v_jl.norm();
+
+                // Partial derivative (for the construction of the Jacobian matirx)
+                float dist_dxi = -(  v_jl[1] * (v_ij[0]*v_il[1] - v_il[0]*v_ij[1]) 
+                                   + v_jl[2] * (v_ij[0]*v_il[2] - v_il[0]*v_ij[2]) ) / area / dist;
+                float dist_dyi =  (  v_jl[0] * (v_ij[0]*v_il[1] - v_il[0]*v_ij[1]) 
+                                   - v_jl[2] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist;
+                float dist_dzi =  (  v_jl[0] * (v_ij[0]*v_il[2] - v_il[0]*v_ij[2]) 
+                                   + v_jl[1] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist;
+                
+            }
 
         }  // for (int i = 0; i < num_edge_points_sharp; i++)
         
