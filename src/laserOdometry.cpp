@@ -49,6 +49,11 @@
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
 
+#include <ctime>
+
+using std::cout;
+using std::endl;
+
 const float scanPeriod = 0.1;
 
 const int skipFrameNum = 1;
@@ -100,9 +105,6 @@ float imuRollStart = 0, imuPitchStart = 0, imuYawStart = 0;
 float imuRollLast = 0, imuPitchLast = 0, imuYawLast = 0;
 float imuShiftFromStartX = 0, imuShiftFromStartY = 0, imuShiftFromStartZ = 0;
 float imuVeloFromStartX = 0, imuVeloFromStartY = 0, imuVeloFromStartZ = 0;
-
-using std::cout;
-using std::endl;
 
 Eigen::Quaternionf euler_to_quaternion(const float roll, const float pitch, const float yaw) {
   Eigen::Quaternionf q = Eigen::AngleAxisf(roll,  Eigen::Vector3f::UnitX())
@@ -515,7 +517,7 @@ int main(int argc, char** argv)
 
           // Process edge points
           for (int i = 0; i < cornerPointsSharpNum; i++) {
-            
+                   
             // Reprojected selected point to the beginning of the sweep
             TransformToStart(&cornerPointsSharp->points[i], &pointSel);
 
@@ -640,6 +642,7 @@ int main(int argc, char** argv)
 
               if (s > 0.1 && ld2 != 0) {
                 laserCloudOri->push_back(cornerPointsSharp->points[i]);
+                //laserCloudOri->push_back(pointSel);
                 coeffSel->push_back(coeff);
               }
             }
@@ -657,14 +660,11 @@ int main(int argc, char** argv)
                 int closestPointScan = int(laserCloudSurfLast->points[closestPointInd].intensity);
 
                 float pointSqDis, minPointSqDis2 = 25, minPointSqDis3 = 25;
-                // modify by thhuang
+                // modified by thhuang
                 for (int j = closestPointInd + 1; j < laserCloudSurfLastNum; j++) {
                 //for (int j = closestPointInd + 1; j < surfPointsFlatNum; j++) {
                   if (int(laserCloudSurfLast->points[j].intensity) > closestPointScan + 2) {
                     break;
-                  // modify by thhuang
-                  } else if (int(laserCloudSurfLast->points[j].intensity) != closestPointScan + 2) {
-                    continue;
                   }
 
                   pointSqDis = (laserCloudSurfLast->points[j].x - pointSel.x) * 
@@ -674,12 +674,14 @@ int main(int argc, char** argv)
                                (laserCloudSurfLast->points[j].z - pointSel.z) * 
                                (laserCloudSurfLast->points[j].z - pointSel.z);
 
-                  if (int(laserCloudSurfLast->points[j].intensity) <= closestPointScan) {
+                  // modified by thhuang
+                  if (int(laserCloudSurfLast->points[j].intensity) == closestPointScan) {
                      if (pointSqDis < minPointSqDis2) {
                        minPointSqDis2 = pointSqDis;
                        minPointInd2 = j;
                      }
-                  } else {
+                  // modified by thhuang
+                  } else if (int(laserCloudSurfLast->points[j].intensity) == closestPointScan + 2) {
                      if (pointSqDis < minPointSqDis3) {
                        minPointSqDis3 = pointSqDis;
                        minPointInd3 = j;
@@ -689,9 +691,6 @@ int main(int argc, char** argv)
                 for (int j = closestPointInd - 1; j >= 0; j--) {
                   if (int(laserCloudSurfLast->points[j].intensity) < closestPointScan - 2) {
                     break;
-                  // modify by thhuang
-                  } else if (int(laserCloudSurfLast->points[j].intensity) != closestPointScan - 2) {
-                    continue;
                   }
 
                   pointSqDis = (laserCloudSurfLast->points[j].x - pointSel.x) * 
@@ -701,24 +700,26 @@ int main(int argc, char** argv)
                                (laserCloudSurfLast->points[j].z - pointSel.z) * 
                                (laserCloudSurfLast->points[j].z - pointSel.z);
 
-                  if (int(laserCloudSurfLast->points[j].intensity) >= closestPointScan) {
+                  // modified by thhuang
+                  if (int(laserCloudSurfLast->points[j].intensity) == closestPointScan) {
                     if (pointSqDis < minPointSqDis2) {
                       minPointSqDis2 = pointSqDis;
                       minPointInd2 = j;
                     }
-                  } else {
+                  // modified by thhuang
+                  } else if (int(laserCloudSurfLast->points[j].intensity) == closestPointScan - 2) {
                     if (pointSqDis < minPointSqDis3) {
                       minPointSqDis3 = pointSqDis;
                       minPointInd3 = j;
                     }
                   }
                 }
-              }
+              }  // if (pointSearchSqDis[0] < 25)
 
               pointSearchSurfInd1[i] = closestPointInd;
               pointSearchSurfInd2[i] = minPointInd2;
               pointSearchSurfInd3[i] = minPointInd3;
-            }
+            }  // if (iterCount % 5 == 0)
 
             if (pointSearchSurfInd2[i] >= 0 && pointSearchSurfInd3[i] >= 0) {
               tripod1 = laserCloudSurfLast->points[pointSearchSurfInd1[i]];
@@ -759,11 +760,14 @@ int main(int argc, char** argv)
 
               if (s > 0.1 && pd2 != 0) {
                 laserCloudOri->push_back(surfPointsFlat->points[i]);
+                //laserCloudOri->push_back(pointSel);
                 coeffSel->push_back(coeff);
               }
             }
           }  // for (int i = 0; i < surfPointsFlatNum; i++)
+      
 
+          // Calculate the number of constrains
           int pointSelNum = laserCloudOri->points.size();
           if (pointSelNum < 10) {
             continue;
@@ -991,6 +995,9 @@ int main(int argc, char** argv)
         laserCloudFullRes3.header.frame_id = "/camera";
         pubLaserCloudFullRes.publish(laserCloudFullRes3);
       }
+          
+      ROS_INFO("XD");  
+    
     }
 
     status = ros::ok();
