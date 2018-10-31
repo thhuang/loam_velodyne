@@ -33,6 +33,11 @@ inline float squared_distance(PointXYZI& p1, PointXYZI& p2) {
 }
 
 
+inline float point_depth(PointXYZI& p) {
+    return sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+}
+
+
 inline Eigen::Quaternionf euler_to_quaternion(const float roll, const float pitch, const float yaw) {
   Eigen::Quaternionf q = Eigen::AngleAxisf(roll,  Eigen::Vector3f::UnitX())
                        * Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY())
@@ -56,6 +61,8 @@ class OdometryEstimator {
     pcl::PointCloud<PointXYZ>::Ptr   imu_trans;
     pcl::PointCloud<PointXYZI>::Ptr  edge_points_last;
     pcl::PointCloud<PointXYZI>::Ptr  planar_points_last;
+    pcl::PointCloud<PointXYZI>::Ptr  constrain_points;
+    pcl::PointCloud<PointXYZI>::Ptr  constrain_parameters;
     pcl::KdTreeFLANN<PointXYZI>::Ptr kdtree_edge_points_last;
     pcl::KdTreeFLANN<PointXYZI>::Ptr kdtree_planar_points_last;
     std::array<float, 6> transform;
@@ -99,6 +106,8 @@ public:
           imu_trans(new pcl::PointCloud<PointXYZ>()),
           edge_points_last(new pcl::PointCloud<PointXYZI>()),
           planar_points_last(new pcl::PointCloud<PointXYZI>()),
+          constrain_points(new pcl::PointCloud<PointXYZI>()),
+          constrain_parameters(new pcl::PointCloud<PointXYZI>()),
           kdtree_edge_points_last(new pcl::KdTreeFLANN<PointXYZI>()),
           kdtree_planar_points_last(new pcl::KdTreeFLANN<PointXYZI>()),
           system_initialized(false),
@@ -345,24 +354,28 @@ void OdometryEstimator::process() {
     // Define helper variables
     std::vector<int> point_search_id;
     std::vector<float> point_search_square_distance;
-
+    
     // L-M optimization
     for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++) {
 
         // Define variables for the selected points [i], [j], [m]
         PointXYZI point_i, point_j, point_l, point_m;
         
-        //laserCloudOri->clear();
-        //coeffSel->clear();
+        // Clear containers for new constrains
+        constrain_points->clear();
+        constrain_parameters->clear();
 
         // Process edge points
         for (int i = 0; i < num_edge_points_sharp; i++) {
+            
             // Reproject the selected point [i] to the start of the sweep
             reproject_to_start(edge_points_sharp->points[i], point_i);
             
             // Create containers for neighbor points [j] and [l]
             std::array<int, 80000> point_j_id;
             std::array<int, 80000> point_l_id;
+            point_j_id.fill(-1);
+            point_l_id.fill(-1);
 
             // Recalculate the transformation after transformation_recalculate_iteration iterations
             if (iter_count % transformation_recalculate_iteration == 0) {
@@ -374,52 +387,56 @@ void OdometryEstimator::process() {
                 int point_j_scan_id = int(edge_points_last->points[point_j_id[i]].intensity);
 
                 // Find the nearest neighbor of [i] in the two consecutive scans to the scan of [j] as [l]
-                point_l_id[i] = -1;
                 if (point_j_square_distance < nearest_neighbor_cutoff) {
                     
                     // Define helper variables
-                    float point_l_squared_distance;
-                    float min_point_squared_distance = nearest_neighbor_cutoff;
+                    float point_squared_distance;
+                    float min_point_l_squared_distance = nearest_neighbor_cutoff;
 
                     // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
-                    for (int l = point_j_id[i] + 1; l < num_edge_points_last; l++) {
+                    for (int p = point_j_id[i] + 1; p < num_edge_points_last; p++) {
                         // Verify whether the point is in the upper consecutive scan to the scan of [j]
-                        if (int(edge_points_last->points[l].intensity) > point_j_scan_id + 2) {
+                        if (int(edge_points_last->points[p].intensity) > point_j_scan_id + 2) {
                             break;
-                        } else if (int(edge_points_last->points[l].intensity) != point_j_scan_id + 2) {
+                        } else if (int(edge_points_last->points[p].intensity) != point_j_scan_id + 2) {
                             continue;
                         }
 
                         // Calculate squared distance between [i] and the candidate point
-                        point_l_squared_distance = squared_distance(edge_points_last->points[l], point_i);
-                    
-                        if (point_l_squared_distance < min_point_squared_distance) {
-                            min_point_squared_distance = point_l_squared_distance;
-                            point_l_id[i] = l;
+                        point_squared_distance = squared_distance(edge_points_last->points[p], point_i);
+                        if (point_squared_distance < min_point_l_squared_distance) {
+                            min_point_l_squared_distance = point_squared_distance;
+                            point_l_id[i] = p;
                         }
-                    }
-                    for (int l = point_j_id[i] - 1; l >= 0; l--) {
+                    }  // for (int p = point_j_id[i] + 1; p < num_edge_points_last; p++)
+                    
+                    // Find closest neighbor of [i] in the lower consecutive scan to the scan of [j]
+                    for (int p = point_j_id[i] - 1; p >= 0; p--) {
+                        
                         // Verify whether the point is in the lower consecutive scan to the scan of [j]
-                        if (int(edge_points_last->points[l].intensity) < point_j_scan_id - 2) {
+                        if (int(edge_points_last->points[p].intensity) < point_j_scan_id - 2) {
                             break;
-                        } else if (int(edge_points_last->points[l].intensity) != point_j_scan_id - 2) {
+                        } else if (int(edge_points_last->points[p].intensity) != point_j_scan_id - 2) {
                             continue;
                         }
 
                         // Calculate squared distance between [i] and the candidate point
-                        point_l_squared_distance = squared_distance(edge_points_last->points[l], point_i);
-                    
-                        if (point_l_squared_distance < min_point_squared_distance) {
-                            min_point_squared_distance = point_l_squared_distance;
-                            point_l_id[i] = l;
+                        point_squared_distance = squared_distance(edge_points_last->points[p], point_i);
+                        if (point_squared_distance < min_point_l_squared_distance) {
+                            min_point_l_squared_distance = point_squared_distance;
+                            point_l_id[i] = p;
                         }
-                    } 
+                    }  // for (int p = point_j_id[i] - 1; p >= 0; p--)
+
                 }  // if (point_j_square_distance < nearest_neighbor_cutoff)
 
             }  // if (iter_count % transformation_recalculate_iteration == 0)
 
+
             // Calculate the distance from [i] to line (jl) if [l] is found
-            if (point_l_id[i] > 0) {
+            if (point_l_id[i] >= 0) {
+
+                // Get searched points
                 point_j = edge_points_last->points[point_j_id[i]];
                 point_l = edge_points_last->points[point_l_id[i]];
 
@@ -440,17 +457,169 @@ void OdometryEstimator::process() {
                 float dist_dzi =  (  v_jl[0] * (v_ij[0]*v_il[2] - v_il[0]*v_ij[2]) 
                                    + v_jl[1] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist;
                 
-            }
+                // Define weight
+                // TODO: remove hardcoded parameters
+                float s = (iter_count < 5) ? 1 : 1 - 1.8 * dist;
+
+                // Add weight to the constrain
+                PointXYZI param;
+                param.x = s * dist_dxi;
+                param.y = s * dist_dyi;
+                param.z = s * dist_dzi;
+                param.intensity = s * dist;
+
+                // Concatenate constrains
+                // TODO: remove hardcoded parameters
+                if (s > 0.1 && dist > 0) {
+                    constrain_points->push_back(point_i);  // TODO: use edge_points_sharp->points[i] or not?
+                    constrain_parameters->push_back(param);
+                }
+            } // if (point_l_id[i] > 0)
 
         }  // for (int i = 0; i < num_edge_points_sharp; i++)
         
-        
-        
         // Process planar points
+        for (int i = 0; i < num_planar_points_flat; i++) {
+            
+            // Reproject the selected point [i] to the start of the sweep
+            reproject_to_start(planar_points_flat->points[i], point_i);
+            
+            // Create containers for neighbor points [j], [l], and [m]
+            std::array<int, 80000> point_j_id;
+            std::array<int, 80000> point_l_id;
+            std::array<int, 80000> point_m_id;
+            point_j_id.fill(-1);
+            point_l_id.fill(-1);
+            point_m_id.fill(-1);
+
+            // Recalculate the transformation after transformation_recalculate_iteration iterations
+            if (iter_count % transformation_recalculate_iteration == 0) {
+                
+                // Find the nearest neighbor [j]
+                kdtree_planar_points_last->nearestKSearch(point_i, 1, point_search_id, point_search_square_distance);
+                point_j_id[i] = point_search_id[0];
+                int point_j_square_distance = point_search_square_distance[0];
+                int point_j_scan_id = int(planar_points_last->points[point_j_id[i]].intensity);
+
+                // Find the nearest neighbor of [i] in the two consecutive scans to the scan of [j] as [m], 
+                // and find the nearest neighbor of [i] in the same scan of [j] as [l]
+                if (point_j_square_distance < nearest_neighbor_cutoff) {
+                    
+                    // Define helper variables
+                    float point_squared_distance;
+                    float min_point_l_squared_distance = nearest_neighbor_cutoff;
+                    float min_point_m_squared_distance = nearest_neighbor_cutoff;
+
+                    // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
+                    for (int p = point_j_id[i] + 1; p < num_planar_points_last; p++) {
+                        // Verify whether the point is in the upper consecutive scan to the scan of [j]
+                        if (int(planar_points_last->points[p].intensity) > point_j_scan_id + 2) {
+                            break;
+                        }
+                        
+                        // Calculate squared distance between [i] and the candidate point
+                        if (int(planar_points_last->points[p].intensity) == point_j_scan_id) {
+                            // Find [l]
+                            point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
+                            if (point_squared_distance < min_point_l_squared_distance) {
+                                min_point_l_squared_distance = point_squared_distance;
+                                point_l_id[i] = p;
+                            }
+                        } else if (int(planar_points_last->points[p].intensity) == point_j_scan_id + 2) {
+                            // Find [m]
+                            point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
+                            if (point_squared_distance < min_point_m_squared_distance) {
+                                min_point_m_squared_distance = point_squared_distance;
+                                point_m_id[i] = p;
+                            }
+                        }
+                    }  // for (int p = point_j_id[i] + 1; p < num_planar_points_last; p++)
+                    
+                    // Find closest neighbor of [i] in the lower consecutive scan to the scan of [j]
+                    for (int p = point_j_id[i] - 1; p >= 0; p--) {
+            
+                        // Verify whether the point is in the lower consecutive scan to the scan of [j]
+                        if (int(planar_points_last->points[p].intensity) < point_j_scan_id - 2) {
+                            break;
+                        }
+
+                        // Calculate squared distance between [i] and the candidate point
+                        if (int(planar_points_last->points[p].intensity) == point_j_scan_id) {
+                            // Find [l]
+                            point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
+                            if (point_squared_distance < min_point_l_squared_distance) {
+                                min_point_l_squared_distance = point_squared_distance;
+                                point_l_id[i] = p;
+                            }
+                        } else if (int(planar_points_last->points[p].intensity) == point_j_scan_id - 2) {
+                            // Find [m]
+                            point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
+                            if (point_squared_distance < min_point_m_squared_distance) {
+                                min_point_m_squared_distance = point_squared_distance;
+                                point_m_id[i] = p;
+                            }
+                        }
+                    }  // for (int p = point_j_id[i] - 1; p >= 0; p--)
+
+                }  // if (point_j_square_distance < nearest_neighbor_cutoff)
+            
+            }  // if (iter_count % transformation_recalculate_iteration == 0)
+
+            // Calculate the distance from [i] to surface (jlm) if [l] and [m] are found
+            if (point_l_id[i] >= 0 && point_m_id[i] >= 0) {
+                
+                // Get searched points
+                point_j = planar_points_last->points[point_j_id[i]];
+                point_l = planar_points_last->points[point_l_id[i]];
+                point_m = planar_points_last->points[point_m_id[i]];
+                
+                // Get vectors
+                Eigen::Vector3f v_jl(point_l.x - point_j.x, point_l.y - point_j.y, point_l.z - point_j.z);    
+                Eigen::Vector3f v_jm(point_m.x - point_j.x, point_m.y - point_j.y, point_m.z - point_j.z);
+                Eigen::Vector3f v_ji(point_i.x - point_j.x, point_i.y - point_j.y, point_i.z - point_j.z);
+                
+                // Helper variables
+                Eigen::Vector3f v_cross = v_jl.cross(v_jm);
+
+                // Calculate the area
+                float area = v_cross.norm();
+
+                // Calculate the distance
+                Eigen::Vector3f v_normal = v_cross / area;
+                float dist = v_normal.dot(v_ji);
+                
+                // Define weight
+                // TODO: remove hardcoded parameters
+                float s = (iter_count < 5) ? 1 : 1 - 1.8 * dist / point_depth(point_i);
+
+                // Add weight to the constrain
+                PointXYZI param;
+                param.x = s * v_normal[0];
+                param.y = s * v_normal[1];
+                param.z = s * v_normal[2];
+                param.intensity = s * dist;
+
+                // Concatenate constrains
+                // TODO: remove hardcoded parameters
+                if (s > 0.1 && dist > 0) {
+                    constrain_points->push_back(point_i);  // TODO: use planar_points_flat->points[i] or not?
+                    constrain_parameters->push_back(param);
+                }
+            
+            }  // if (point_l_id[i] >= 0 && point_m_id[i] >= 0)
+
+        }  // for (int i = 0; i < num_planar_points_flat; i++)
+       
+        // Calculate the number of constrains
+        int num_constrains = constrain_points->points.size();
+        if (num_constrains < 10) {
+            continue;
+        }
+
+
 
 
     }  // for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++)
-
 
     // Publish result
 
