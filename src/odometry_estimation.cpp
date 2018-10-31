@@ -471,7 +471,8 @@ void OdometryEstimator::process() {
                 // Concatenate constrains
                 // TODO: remove hardcoded parameters
                 if (s > 0.1 && dist > 0) {
-                    constrain_points->push_back(point_i);  // TODO: use edge_points_sharp->points[i] or not?
+                    //constrain_points->push_back(point_i);  // TODO: use edge_points_sharp->points[i] or point_i?
+                    constrain_points->push_back(edge_points_sharp->points[i]);
                     constrain_parameters->push_back(param);
                 }
             } // if (point_l_id[i] > 0)
@@ -602,7 +603,8 @@ void OdometryEstimator::process() {
                 // Concatenate constrains
                 // TODO: remove hardcoded parameters
                 if (s > 0.1 && dist > 0) {
-                    constrain_points->push_back(point_i);  // TODO: use planar_points_flat->points[i] or not?
+                    //constrain_points->push_back(point_i);  // TODO: use planar_points_flat->points[i] or point_i?
+                    constrain_points->push_back(planar_points_flat->points[i]);
                     constrain_parameters->push_back(param);
                 }
             
