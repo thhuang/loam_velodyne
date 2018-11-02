@@ -517,14 +517,34 @@ int main(int argc, char** argv)
 
           // Process edge points
           for (int i = 0; i < cornerPointsSharpNum; i++) {
-                   
+           
+              
+              if (i == 15) {
+                  PointType tmp;
+                  tmp = cornerPointsSharp->points[i];
+                  cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
+                       << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
+                  cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
+              }
             // Reprojected selected point to the beginning of the sweep
             TransformToStart(&cornerPointsSharp->points[i], &pointSel);
+              
+              if (i == 15) {
+                  PointType tmp;
+                  tmp = pointSel;
+                  cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
+              }
 
             if (iterCount % 5 == 0) {
               std::vector<int> indices;
               pcl::removeNaNFromPointCloud(*laserCloudCornerLast,*laserCloudCornerLast, indices);
               kdtreeCornerLast->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);
+             
+              if (i < 5) {
+                 cout << "nearestKSearch: " << endl;
+                 cout << "\t" << pointSearchInd[0] << "\t" << pointSearchSqDis[0] << endl;
+              }
+              
               int closestPointInd = -1, minPointInd2 = -1;
               if (pointSearchSqDis[0] < 25) {
                 closestPointInd = pointSearchInd[0];
@@ -594,6 +614,15 @@ int main(int argc, char** argv)
             if (pointSearchCornerInd2[i] >= 0) {
               tripod1 = laserCloudCornerLast->points[pointSearchCornerInd1[i]];
               tripod2 = laserCloudCornerLast->points[pointSearchCornerInd2[i]];
+
+
+                if (i == 0) {
+                    cout << "#######################################" << endl;
+                    cout << "# [i]: " << i << "\t" << pointSel.x << "\t" << pointSel.y << "\t" << pointSel.z << endl;
+                    cout << "# [j]: " << pointSearchCornerInd1[i] << "\t" << tripod1.x << "\t" << tripod1.y << "\t" << tripod1.z << endl;
+                    cout << "# [l]: " << pointSearchCornerInd2[i] << "\t" << tripod2.x << "\t" << tripod2.y << "\t" << tripod2.z << endl;
+                    cout << "#######################################" << endl;
+                }
 
               float x0 = pointSel.x;
               float y0 = pointSel.y;
@@ -766,9 +795,19 @@ int main(int argc, char** argv)
             }
           }  // for (int i = 0; i < surfPointsFlatNum; i++)
       
-
           // Calculate the number of constrains
           int pointSelNum = laserCloudOri->points.size();
+          cout << "==========================" << endl;
+          cout << pointSelNum << endl;
+          PointType tmp1 = laserCloudOri->points[0];
+          PointType tmp2 = coeffSel->points[0];
+          cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
+          cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
+          tmp1 = laserCloudOri->points[pointSelNum - 1];
+          tmp2 = coeffSel->points[pointSelNum - 1];
+          cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
+          cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
+          cout << "==========================" << endl;
           if (pointSelNum < 10) {
             continue;
           }
@@ -841,6 +880,8 @@ int main(int argc, char** argv)
           matAtB = matAt * matB;
           cv::solve(matAtA, matAtB, matX, cv::DECOMP_QR);
 
+          // Test
+          /*
           if (iterCount == 0) {
             cv::Mat matE(1, 6, CV_32F, cv::Scalar::all(0));
             cv::Mat matV(6, 6, CV_32F, cv::Scalar::all(0));
@@ -869,6 +910,7 @@ int main(int argc, char** argv)
             matX.copyTo(matX2);
             matX = matP * matX2;
           }
+          */
 
           transform[0] += matX.at<float>(0, 0);
           transform[1] += matX.at<float>(1, 0);
@@ -876,11 +918,15 @@ int main(int argc, char** argv)
           transform[3] += matX.at<float>(3, 0);
           transform[4] += matX.at<float>(4, 0);
           transform[5] += matX.at<float>(5, 0);
+                
+          cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
+               << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
 
           for(int i=0; i<6; i++){
             if(isnan(transform[i]))
               transform[i]=0;
           }
+          
           float deltaR = sqrt(
                               pow(rad2deg(matX.at<float>(0, 0)), 2) +
                               pow(rad2deg(matX.at<float>(1, 0)), 2) +
@@ -890,15 +936,48 @@ int main(int argc, char** argv)
                               pow(matX.at<float>(4, 0) * 100, 2) +
                               pow(matX.at<float>(5, 0) * 100, 2));
 
+          cout << deltaR << endl;
+          cout << deltaT << endl;
+          cout << endl;
+
           if (deltaR < 0.1 && deltaT < 0.1) {
             break;
           }
         }
       }  // if (laserCloudCornerLastNum > 10 && laserCloudSurfLastNum > 100) {}
+     
+    
+      cout << "(1)************************************************************************" << endl;
+      cout << "* ";
+      for (int i = 0; i < 6; i++) {
+          cout << transform[i] << "\t";
+      }
+      cout << endl;
+      cout << "* ";
+      for (int i = 0; i < 6; i++) {
+          cout << transformSum[i] << "\t";
+      }
+      cout << endl;
+      cout << "(1)************************************************************************" << endl;
+        
 
       float rx, ry, rz, tx, ty, tz;
       AccumulateRotation(transformSum[0], transformSum[1], transformSum[2], 
                          -transform[0], -transform[1] * 1.05, -transform[2], rx, ry, rz);
+
+      cout << "(2)************************************************************************" << endl;
+      cout << "* ";
+      for (int i = 0; i < 6; i++) {
+          cout << transform[i] << "\t";
+      }
+      cout << endl;
+      cout << "* ";
+      for (int i = 0; i < 6; i++) {
+          cout << transformSum[i] << "\t";
+      }
+      cout << endl;
+      cout << "* " << rx << "\t" << ry << "\t" << rz << endl;
+      cout << "(2)************************************************************************" << endl;
 
       float x1 = cos(rz) * (transform[3] - imuShiftFromStartX) 
                - sin(rz) * (transform[4] - imuShiftFromStartY);
