@@ -25,6 +25,11 @@ using pcl::PointXYZI;
 using pcl::PointXYZ;
 
 
+inline double rad2deg(double radians) {
+    return radians * 180.0 / M_PI;
+}
+
+
 inline float squared_distance(PointXYZI& p1, PointXYZI& p2) {
     float dx = p1.x - p2.x;
     float dy = p1.y - p2.y;
@@ -89,6 +94,8 @@ class OdometryEstimator {
     const int   max_lm_iteration;
     const int   transformation_recalculate_iteration;
     const float nearest_neighbor_cutoff;
+    const float tolerance_rotation;
+    const float tolerance_translation;
 
 public:
     OdometryEstimator(ros::NodeHandle& node) 
@@ -125,7 +132,9 @@ public:
           min_planar_point_threshold(100),
           max_lm_iteration(25),
           transformation_recalculate_iteration(5),
-          nearest_neighbor_cutoff(25)
+          nearest_neighbor_cutoff(25),
+          tolerance_rotation(0.1),
+          tolerance_translation(0.1)
         { 
           transform.fill(0);
           transform_sum.fill(0); 
@@ -339,7 +348,7 @@ void OdometryEstimator::process() {
     }
 
     // Skip if the amount of feature points is not enough
-    if (num_edge_points_last < min_edge_point_threshold || num_planar_points_last < min_planar_point_threshold) {
+    if (num_edge_points_last <= min_edge_point_threshold || num_planar_points_last <= min_planar_point_threshold) {
         return;
     }
     
@@ -350,16 +359,24 @@ void OdometryEstimator::process() {
     // Calculate feature size
     int num_edge_points_sharp = edge_points_sharp->points.size();
     int num_planar_points_flat = planar_points_flat->points.size();
-        
+       
     // Define helper variables
     std::vector<int> point_search_id;
     std::vector<float> point_search_square_distance;
     
+    // Create containers for searched points [j], [l], and [m]
+    std::array<int, 80000> edge_point_j_id;
+    std::array<int, 80000> edge_point_l_id;
+    std::array<int, 80000> planar_point_j_id;
+    std::array<int, 80000> planar_point_l_id;
+    std::array<int, 80000> planar_point_m_id;
+    
     // L-M optimization
     for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++) {
 
-        // Define variables for the selected points [i], [j], [m]
+        // Define variables for selected points [i], [j], [m]
         PointXYZI point_i, point_j, point_l, point_m;
+    
         
         // Clear containers for new constrains
         constrain_points->clear();
@@ -367,34 +384,54 @@ void OdometryEstimator::process() {
 
         // Process edge points
         for (int i = 0; i < num_edge_points_sharp; i++) {
-            
+        
+            if (i == 15) {
+                PointXYZI tmp;
+                tmp = edge_points_sharp->points[i];
+                cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
+                     << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
+                cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
+            }
+
             // Reproject the selected point [i] to the start of the sweep
             reproject_to_start(edge_points_sharp->points[i], point_i);
-            
-            // Create containers for neighbor points [j] and [l]
-            std::array<int, 80000> point_j_id;
-            std::array<int, 80000> point_l_id;
-            point_j_id.fill(-1);
-            point_l_id.fill(-1);
+           
+            if (i == 15) {
+                PointXYZI tmp;
+                tmp = point_i;
+                cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
+            }
+
 
             // Recalculate the transformation after transformation_recalculate_iteration iterations
             if (iter_count % transformation_recalculate_iteration == 0) {
                 
+                // Initialize
+                // TODO: refactor
+                edge_point_j_id[i] = -1;
+                edge_point_l_id[i] = -1;
+
                 // Find the nearest neighbor [j]
                 kdtree_edge_points_last->nearestKSearch(point_i, 1, point_search_id, point_search_square_distance);
-                point_j_id[i] = point_search_id[0];
-                int point_j_square_distance = point_search_square_distance[0];
-                int point_j_scan_id = int(edge_points_last->points[point_j_id[i]].intensity);
+                
+                if (i < 5) {
+                    cout << "nearestKSearch: " << endl;
+                    cout << "\t" << point_search_id[0] << "\t" << point_search_square_distance[0] << endl;
+                }
 
                 // Find the nearest neighbor of [i] in the two consecutive scans to the scan of [j] as [l]
-                if (point_j_square_distance < nearest_neighbor_cutoff) {
+                if (point_search_square_distance[0] < nearest_neighbor_cutoff) {
                     
+                    // Update [j]
+                    edge_point_j_id[i] = point_search_id[0];
+                    int point_j_scan_id = int(edge_points_last->points[edge_point_j_id[i]].intensity);
+
                     // Define helper variables
                     float point_squared_distance;
                     float min_point_l_squared_distance = nearest_neighbor_cutoff;
 
                     // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
-                    for (int p = point_j_id[i] + 1; p < num_edge_points_last; p++) {
+                    for (int p = edge_point_j_id[i] + 1; p < num_edge_points_last; p++) {
                         // Verify whether the point is in the upper consecutive scan to the scan of [j]
                         if (int(edge_points_last->points[p].intensity) > point_j_scan_id + 2) {
                             break;
@@ -406,12 +443,12 @@ void OdometryEstimator::process() {
                         point_squared_distance = squared_distance(edge_points_last->points[p], point_i);
                         if (point_squared_distance < min_point_l_squared_distance) {
                             min_point_l_squared_distance = point_squared_distance;
-                            point_l_id[i] = p;
+                            edge_point_l_id[i] = p;
                         }
-                    }  // for (int p = point_j_id[i] + 1; p < num_edge_points_last; p++)
+                    }  // for (int p = edge_point_j_id[i] + 1; p < num_edge_points_last; p++)
                     
                     // Find closest neighbor of [i] in the lower consecutive scan to the scan of [j]
-                    for (int p = point_j_id[i] - 1; p >= 0; p--) {
+                    for (int p = edge_point_j_id[i] - 1; p >= 0; p--) {
                         
                         // Verify whether the point is in the lower consecutive scan to the scan of [j]
                         if (int(edge_points_last->points[p].intensity) < point_j_scan_id - 2) {
@@ -424,21 +461,29 @@ void OdometryEstimator::process() {
                         point_squared_distance = squared_distance(edge_points_last->points[p], point_i);
                         if (point_squared_distance < min_point_l_squared_distance) {
                             min_point_l_squared_distance = point_squared_distance;
-                            point_l_id[i] = p;
+                            edge_point_l_id[i] = p;
                         }
-                    }  // for (int p = point_j_id[i] - 1; p >= 0; p--)
+                    }  // for (int p = edge_point_j_id[i] - 1; p >= 0; p--)
 
-                }  // if (point_j_square_distance < nearest_neighbor_cutoff)
+                }  // if (point_search_square_distance[0] < nearest_neighbor_cutoff)
 
             }  // if (iter_count % transformation_recalculate_iteration == 0)
 
 
             // Calculate the distance from [i] to line (jl) if [l] is found
-            if (point_l_id[i] >= 0) {
+            if (edge_point_l_id[i] >= 0) {
 
                 // Get searched points
-                point_j = edge_points_last->points[point_j_id[i]];
-                point_l = edge_points_last->points[point_l_id[i]];
+                point_j = edge_points_last->points[edge_point_j_id[i]];
+                point_l = edge_points_last->points[edge_point_l_id[i]];
+
+                if (i == 0) {
+                    cout << "#######################################" << endl;
+                    cout << "# [i]: " << i << "\t" << point_i.x << "\t" << point_i.y << "\t" << point_i.z << endl;
+                    cout << "# [j]: " << edge_point_j_id[i] << "\t" << point_j.x << "\t" << point_j.y << "\t" << point_j.z << endl;
+                    cout << "# [l]: " << edge_point_l_id[i] << "\t" << point_l.x << "\t" << point_l.y << "\t" << point_l.z << endl;
+                    cout << "#######################################" << endl;
+                }
 
                 // Get vectors
                 Eigen::Vector3f v_ij(point_j.x - point_i.x, point_j.y - point_i.y, point_j.z - point_i.z);    
@@ -447,15 +492,16 @@ void OdometryEstimator::process() {
 
                 // Calculate distance
                 float area = v_ij.cross(v_il).norm();
-                float dist = area / v_jl.norm();
+                float dist_jl = v_jl.norm();
+                float dist = area / dist_jl;
 
                 // Partial derivative (for the construction of the Jacobian matirx)
                 float dist_dxi = -(  v_jl[1] * (v_ij[0]*v_il[1] - v_il[0]*v_ij[1]) 
-                                   + v_jl[2] * (v_ij[0]*v_il[2] - v_il[0]*v_ij[2]) ) / area / dist;
+                                   + v_jl[2] * (v_ij[0]*v_il[2] - v_il[0]*v_ij[2]) ) / area / dist_jl;
                 float dist_dyi =  (  v_jl[0] * (v_ij[0]*v_il[1] - v_il[0]*v_ij[1]) 
-                                   - v_jl[2] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist;
+                                   - v_jl[2] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist_jl;
                 float dist_dzi =  (  v_jl[0] * (v_ij[0]*v_il[2] - v_il[0]*v_ij[2]) 
-                                   + v_jl[1] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist;
+                                   + v_jl[1] * (v_ij[1]*v_il[2] - v_il[1]*v_ij[2]) ) / area / dist_jl;
                 
                 // Define weight
                 // TODO: remove hardcoded parameters
@@ -470,49 +516,49 @@ void OdometryEstimator::process() {
 
                 // Concatenate constrains
                 // TODO: remove hardcoded parameters
-                if (s > 0.1 && dist > 0) {
+                // TODO: dist > 0 
+                if (s > 0.1 && dist != 0) {
                     //constrain_points->push_back(point_i);  // TODO: use edge_points_sharp->points[i] or point_i?
                     constrain_points->push_back(edge_points_sharp->points[i]);
                     constrain_parameters->push_back(param);
                 }
-            } // if (point_l_id[i] > 0)
+            } // if (edge_point_l_id[i] > 0)
 
         }  // for (int i = 0; i < num_edge_points_sharp; i++)
-        
+         
         // Process planar points
         for (int i = 0; i < num_planar_points_flat; i++) {
             
             // Reproject the selected point [i] to the start of the sweep
             reproject_to_start(planar_points_flat->points[i], point_i);
             
-            // Create containers for neighbor points [j], [l], and [m]
-            std::array<int, 80000> point_j_id;
-            std::array<int, 80000> point_l_id;
-            std::array<int, 80000> point_m_id;
-            point_j_id.fill(-1);
-            point_l_id.fill(-1);
-            point_m_id.fill(-1);
-
             // Recalculate the transformation after transformation_recalculate_iteration iterations
             if (iter_count % transformation_recalculate_iteration == 0) {
-                
+               
+                // Initialize
+                // TODO: refactor
+                planar_point_j_id[i] = -1;
+                planar_point_l_id[i] = -1;
+                planar_point_m_id[i] = -1;
+
                 // Find the nearest neighbor [j]
                 kdtree_planar_points_last->nearestKSearch(point_i, 1, point_search_id, point_search_square_distance);
-                point_j_id[i] = point_search_id[0];
-                int point_j_square_distance = point_search_square_distance[0];
-                int point_j_scan_id = int(planar_points_last->points[point_j_id[i]].intensity);
 
                 // Find the nearest neighbor of [i] in the two consecutive scans to the scan of [j] as [m], 
                 // and find the nearest neighbor of [i] in the same scan of [j] as [l]
-                if (point_j_square_distance < nearest_neighbor_cutoff) {
+                if (point_search_square_distance[0] < nearest_neighbor_cutoff) {
                     
+                    // Update [j]
+                    planar_point_j_id[i] = point_search_id[0];
+                    int point_j_scan_id = int(planar_points_last->points[planar_point_j_id[i]].intensity);
+
                     // Define helper variables
                     float point_squared_distance;
                     float min_point_l_squared_distance = nearest_neighbor_cutoff;
                     float min_point_m_squared_distance = nearest_neighbor_cutoff;
 
                     // Find closest neighbor of [i] in the upper consecutive scan to the scan of [j]
-                    for (int p = point_j_id[i] + 1; p < num_planar_points_last; p++) {
+                    for (int p = planar_point_j_id[i] + 1; p < num_planar_points_last; p++) {
                         // Verify whether the point is in the upper consecutive scan to the scan of [j]
                         if (int(planar_points_last->points[p].intensity) > point_j_scan_id + 2) {
                             break;
@@ -524,20 +570,20 @@ void OdometryEstimator::process() {
                             point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
                             if (point_squared_distance < min_point_l_squared_distance) {
                                 min_point_l_squared_distance = point_squared_distance;
-                                point_l_id[i] = p;
+                                planar_point_l_id[i] = p;
                             }
                         } else if (int(planar_points_last->points[p].intensity) == point_j_scan_id + 2) {
                             // Find [m]
                             point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
                             if (point_squared_distance < min_point_m_squared_distance) {
                                 min_point_m_squared_distance = point_squared_distance;
-                                point_m_id[i] = p;
+                                planar_point_m_id[i] = p;
                             }
                         }
-                    }  // for (int p = point_j_id[i] + 1; p < num_planar_points_last; p++)
+                    }  // for (int p = planar_point_j_id[i] + 1; p < num_planar_points_last; p++)
                     
                     // Find closest neighbor of [i] in the lower consecutive scan to the scan of [j]
-                    for (int p = point_j_id[i] - 1; p >= 0; p--) {
+                    for (int p = planar_point_j_id[i] - 1; p >= 0; p--) {
             
                         // Verify whether the point is in the lower consecutive scan to the scan of [j]
                         if (int(planar_points_last->points[p].intensity) < point_j_scan_id - 2) {
@@ -550,29 +596,29 @@ void OdometryEstimator::process() {
                             point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
                             if (point_squared_distance < min_point_l_squared_distance) {
                                 min_point_l_squared_distance = point_squared_distance;
-                                point_l_id[i] = p;
+                                planar_point_l_id[i] = p;
                             }
                         } else if (int(planar_points_last->points[p].intensity) == point_j_scan_id - 2) {
                             // Find [m]
                             point_squared_distance = squared_distance(planar_points_last->points[p], point_i);
                             if (point_squared_distance < min_point_m_squared_distance) {
                                 min_point_m_squared_distance = point_squared_distance;
-                                point_m_id[i] = p;
+                                planar_point_m_id[i] = p;
                             }
                         }
-                    }  // for (int p = point_j_id[i] - 1; p >= 0; p--)
+                    }  // for (int p = planar_point_j_id[i] - 1; p >= 0; p--)
 
-                }  // if (point_j_square_distance < nearest_neighbor_cutoff)
-            
+                }  // if (point_search_square_distance[0] < nearest_neighbor_cutoff)
+           
             }  // if (iter_count % transformation_recalculate_iteration == 0)
 
             // Calculate the distance from [i] to surface (jlm) if [l] and [m] are found
-            if (point_l_id[i] >= 0 && point_m_id[i] >= 0) {
+            if (planar_point_l_id[i] >= 0 && planar_point_m_id[i] >= 0) {
                 
                 // Get searched points
-                point_j = planar_points_last->points[point_j_id[i]];
-                point_l = planar_points_last->points[point_l_id[i]];
-                point_m = planar_points_last->points[point_m_id[i]];
+                point_j = planar_points_last->points[planar_point_j_id[i]];
+                point_l = planar_points_last->points[planar_point_l_id[i]];
+                point_m = planar_points_last->points[planar_point_m_id[i]];
                 
                 // Get vectors
                 Eigen::Vector3f v_jl(point_l.x - point_j.x, point_l.y - point_j.y, point_l.z - point_j.z);    
@@ -602,28 +648,171 @@ void OdometryEstimator::process() {
 
                 // Concatenate constrains
                 // TODO: remove hardcoded parameters
-                if (s > 0.1 && dist > 0) {
+                // TODO: dist > 0
+                if (s > 0.1 && dist != 0) {
                     //constrain_points->push_back(point_i);  // TODO: use planar_points_flat->points[i] or point_i?
                     constrain_points->push_back(planar_points_flat->points[i]);
                     constrain_parameters->push_back(param);
                 }
             
-            }  // if (point_l_id[i] >= 0 && point_m_id[i] >= 0)
+            }  // if (planar_point_l_id[i] >= 0 && planar_point_m_id[i] >= 0)
 
         }  // for (int i = 0; i < num_planar_points_flat; i++)
        
         // Calculate the number of constrains
         int num_constrains = constrain_points->points.size();
+        cout << "==========================" << endl;
+        cout << num_constrains << endl;
+        PointXYZI tmp1 = constrain_points->points[0];
+        PointXYZI tmp2 = constrain_parameters->points[0];
+        cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
+        cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
+        tmp1 = constrain_points->points[num_constrains - 1];
+        tmp2 = constrain_parameters->points[num_constrains - 1];
+        cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
+        cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
+        cout << "==========================" << endl;
         if (num_constrains < 10) {
             continue;
         }
 
+        // Helper matrices
+        Eigen::Matrix<float, Eigen::Dynamic, 6> mat_A(num_constrains, 6);
+        Eigen::Matrix<float, 6, Eigen::Dynamic> mat_At(6, num_constrains);
+        Eigen::Matrix<float, 6, 6>              mat_AtA;
+        Eigen::VectorXf                         mat_B(num_constrains);
+        Eigen::Matrix<float, 6, 1>              mat_AtB;
+        Eigen::Matrix<float, 6, 1>              mat_X;
 
+        // Build the Jacobian matrix
+        for (int i = 0; i < num_constrains; i++) {
+        
+            const PointXYZI& point = constrain_points->points[i];
+            const PointXYZI& param = constrain_parameters->points[i];
 
+            float s = 1;
+
+            float srx = sin(s * transform[0]);
+            float crx = cos(s * transform[0]);
+            float sry = sin(s * transform[1]);
+            float cry = cos(s * transform[1]);
+            float srz = sin(s * transform[2]);
+            float crz = cos(s * transform[2]);
+            float tx = s * transform[3];
+            float ty = s * transform[4];
+            float tz = s * transform[5];
+
+            float arx = (-s * crx*sry*srz*point.x + s * crx*crz*sry*point.y + s * srx*sry*point.z
+                        + s * tx*crx*sry*srz      - s * ty*crx*crz*sry      - s * tz*srx*sry)     * param.x
+                      + ( s * srx*srz*point.x     - s * crz*srx*point.y     + s * crx*point.z
+                        + s * ty*crz*srx          - s * tz*crx              - s * tx*srx*srz)     * param.y
+                      + ( s * crx*cry*srz*point.x - s * crx*cry*crz*point.y - s * cry*srx*point.z
+                        + s * tz*cry*srx          + s * ty*crx*cry*crz      - s * tx*crx*cry*srz) * param.z;
+
+            float ary = ( (-s * crz*sry     - s * cry*srx*srz) * point.x
+                        + ( s * cry*crz*srx - s * sry*srz)     * point.y 
+                        -   s * crx*cry                        * point.z
+                        + tx * (s*crz*sry + s * cry*srx*srz) 
+                        + ty * (s*sry*srz - s * cry*crz*srx)
+                        + s * tz*crx*cry                                 ) * param.x
+                      + ( ( s * cry*crz     - s * srx*sry*srz) * point.x
+                        + ( s * cry*srz     + s * crz*srx*sry) * point.y 
+                        -   s * crx*sry                        * point.z
+                        + s  * tz*crx*sry 
+                        - ty * (s*cry*srz + s * crz*srx*sry)
+                        - tx * (s*cry*crz - s * srx*sry*srz)             ) * param.z;
+
+            float arz = ( (-s * cry*srz - s * crz*srx*sry)*point.x 
+                        + ( s * cry*crz - s * srx*sry*srz)*point.y
+                        + tx * (s*cry*srz + s * crz*srx*sry) 
+                        - ty * (s*cry*crz - s * srx*sry*srz)             ) * param.x
+                      + (-s * crx*crz*point.x 
+                        - s * crx*srz*point.y
+                        + s * ty*crx*srz 
+                        + s * tx*crx*crz                                 ) * param.y
+                      + ( (s * cry*crz*srx - s * sry*srz)      * point.x 
+                        + (s * crz*sry     + s * cry*srx*srz)  * point.y
+                        + tx * (s*sry*srz  - s * cry*crz*srx)
+                        - ty * (s*crz*sry  + s * cry*srx*srz)            ) * param.z;
+
+            float atx = -s * (cry*crz - srx * sry*srz) * param.x 
+                      +  s *  crx*srz                  * param.y
+                      -  s * (crz*sry + cry * srx*srz) * param.z;
+
+            float aty = -s * (cry*srz + crz * srx*sry) * param.x 
+                      -  s *  crx*crz                  * param.y
+                      -  s * (sry*srz - cry * crz*srx) * param.z;
+
+            float atz = s * crx*sry * param.x 
+                      - s * srx     * param.y 
+                      - s * crx*cry * param.z;
+
+            float d2 = param.intensity;
+
+            mat_A(i, 0) = arx;
+            mat_A(i, 1) = ary;
+            mat_A(i, 2) = arz;
+            mat_A(i, 3) = atx;
+            mat_A(i, 4) = aty;
+            mat_A(i, 5) = atz;
+            mat_B(i, 0) = -0.05 * d2;  // TODO: remove the hardcoded parameter
+        }  // for (int i = 0; i < num_constrains; i++)
+        
+        // Solve
+        mat_At = mat_A.transpose();
+        mat_AtA = mat_At * mat_A;
+        mat_AtB = mat_At * mat_B;
+        mat_X = mat_AtA.colPivHouseholderQr().solve(mat_AtB);
+        //cout << "The relative error is:\n" << ((mat_AtA * mat_X - mat_AtB) / mat_AtB.norm()).transpose() << endl;
+        
+        // Update transformation
+        transform[0] += mat_X(0, 0);
+        transform[1] += mat_X(1, 0);
+        transform[2] += mat_X(2, 0);
+        transform[3] += mat_X(3, 0);
+        transform[4] += mat_X(4, 0);
+        transform[5] += mat_X(5, 0);
+
+        cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
+             << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
+        
+        // Check whether the value of the transformation is finit
+        for (auto& ele : transform) {
+            if (!pcl_isfinite(ele)) {
+                ele = 0;
+            }
+        }
+
+        // Calculate rotation difference norm translation difference norm
+        float dr_norm = Eigen::Vector3f(transform[0], transform[1], transform[2]).norm();
+        float dt_norm = Eigen::Vector3f(transform[3], transform[4], transform[5]).norm();
+
+        cout << dr_norm * 180 / M_PI << endl;
+        cout << dt_norm * 100 << endl;
+        cout << endl;
+
+        if (dr_norm * 180 / M_PI < tolerance_rotation && dt_norm * 100 < tolerance_translation) {
+            break;
+        }
 
     }  // for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++)
 
     // Publish result
+
+    // Update reference feature points with pointer swap
+    edge_points_last.swap(edge_points_less_sharp);
+    planar_points_last.swap(planar_points_less_flat);
+    
+    // Update reference feature point sizes
+    num_edge_points_last = edge_points_last->points.size();
+    num_planar_points_last = planar_points_last->points.size();
+
+    // Store point clonds in KDTree for fast range-search
+    if (num_edge_points_last > min_edge_point_threshold && num_planar_points_last > min_planar_point_threshold) {
+        kdtree_edge_points_last->setInputCloud(edge_points_last);
+        kdtree_planar_points_last->setInputCloud(planar_points_last);
+    }
+
 
     // Debug
     ROS_INFO("XD");  
