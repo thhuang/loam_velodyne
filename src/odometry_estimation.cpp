@@ -7,7 +7,9 @@
 #include <Eigen/Geometry>
 
 #include <ros/ros.h>
-
+#include <tf/transform_datatypes.h>
+#include <tf/transform_broadcaster.h>
+#include <nav_msgs/Odometry.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/Imu.h>
 
@@ -76,6 +78,9 @@ class OdometryEstimator {
     ros::NodeHandle& node;
     ros::Publisher pub_edge_points_last;
     ros::Publisher pub_planar_points_last;
+    ros::Publisher pub_point_cloud_reprojected;
+    ros::Publisher pub_lidar_odometry;
+    tf::TransformBroadcaster tf_broadcaster;
     std::string    camera_frame_id;
     std::string    camera_init_frame_id;
     std::string    camera_odom_frame_id;
@@ -121,8 +126,10 @@ class OdometryEstimator {
 public:
     OdometryEstimator(ros::NodeHandle& node) 
         : node(node),
-          pub_edge_points_last(node.advertise<sensor_msgs::PointCloud2>("/edge_points_last", 2)),
-          pub_planar_points_last(node.advertise<sensor_msgs::PointCloud2>("/planar_points_last", 2)),
+          pub_edge_points_last(node.advertise<sensor_msgs::PointCloud2>("/edge_points_last", 2)),  // TODO: remap
+          pub_planar_points_last(node.advertise<sensor_msgs::PointCloud2>("/planar_points_last", 2)),  // TODO: remap
+          pub_point_cloud_reprojected(node.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_reprojected", 2)),  // TODO: remap
+          pub_lidar_odometry(node.advertise<nav_msgs::Odometry>("/lidar_odom_to_init", 5)),  // TODO: remap
           camera_frame_id("/camera"),
           camera_init_frame_id("/camera_init"),
           camera_odom_frame_id("/camera_odom"),
@@ -869,7 +876,7 @@ void OdometryEstimator::process() {
 
     }  // for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++)
 
-    
+    // Frame Transformation
 ////////////////////////////////////////////////////////////////////////////////////////////////////
     float rx, ry, rz, tx, ty, tz;
     AccumulateRotation(transform_sum[0], transform_sum[1], transform_sum[2], 
@@ -899,18 +906,12 @@ void OdometryEstimator::process() {
     
     
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-  
-    // Frame Transformation
 
-
-    // Publish result
-
-    
     // Reproject point clouds to the end of the sweep
-    for (auto& p : *edge_points_less_sharp) {
+    for (auto& p : edge_points_less_sharp->points) {
         reproject_to_end(p, p);
     }
-    for (auto& p : *planar_points_less_flat) {
+    for (auto& p : planar_points_less_flat->points) {
         reproject_to_end(p, p);
     }
 
@@ -928,6 +929,38 @@ void OdometryEstimator::process() {
         kdtree_planar_points_last->setInputCloud(planar_points_last);
     }
 
+    // Publish result
+
+    nav_msgs::Odometry laserOdometry;
+    laserOdometry.header.frame_id = "/camera_init";
+    laserOdometry.child_frame_id = "/laser_odom";
+
+    tf::StampedTransform laserOdometryTrans;
+    laserOdometryTrans.frame_id_ = "/camera_init";
+    laserOdometryTrans.child_frame_id_ = "/laser_odom";
+  
+    geometry_msgs::Quaternion geoQuat = tf::createQuaternionMsgFromRollPitchYaw(rz, -rx, -ry);
+
+    laserOdometry.header.stamp = ros::Time().fromSec(time_point_cloud);
+    laserOdometry.pose.pose.orientation.x = -geoQuat.y;
+    laserOdometry.pose.pose.orientation.y = -geoQuat.z;
+    laserOdometry.pose.pose.orientation.z = geoQuat.x;
+    laserOdometry.pose.pose.orientation.w = geoQuat.w;
+    laserOdometry.pose.pose.position.x = tx;
+    laserOdometry.pose.pose.position.y = ty;
+    laserOdometry.pose.pose.position.z = tz;
+    pub_lidar_odometry.publish(laserOdometry);
+
+    laserOdometryTrans.stamp_ = ros::Time().fromSec(time_point_cloud);
+    laserOdometryTrans.setRotation(tf::Quaternion(-geoQuat.y, -geoQuat.z, geoQuat.x, geoQuat.w));
+    laserOdometryTrans.setOrigin(tf::Vector3(tx, ty, tz));
+    tf_broadcaster.sendTransform(laserOdometryTrans);
+
+        sensor_msgs::PointCloud2 laserCloudFullRes3;
+        pcl::toROSMsg(*point_cloud, laserCloudFullRes3);
+        laserCloudFullRes3.header.stamp = ros::Time().fromSec(time_point_cloud);
+        laserCloudFullRes3.header.frame_id = "/laser_odom";  // TODO: use /camera
+        pub_point_cloud_reprojected.publish(laserCloudFullRes3);
 
     // Debug
     ROS_INFO("XD");  
