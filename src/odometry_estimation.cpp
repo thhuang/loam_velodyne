@@ -107,6 +107,7 @@ class OdometryEstimator {
     bool   new_imu_trans;
     int    num_edge_points_last;
     int    num_planar_points_last;
+    int    frame_count;
     double time_point_cloud;
     double time_edge_points_sharp;
     double time_edge_points_less_sharp;
@@ -156,6 +157,7 @@ public:
           num_edge_points_last(0),
           num_planar_points_last(0),
           num_skip_frame(1),
+          frame_count(0),
           min_edge_point_threshold(10),
           min_planar_point_threshold(100),
           max_lm_iteration(25),
@@ -866,48 +868,19 @@ void OdometryEstimator::process() {
         float dr_norm = Eigen::Vector3f(transform[0], transform[1], transform[2]).norm();
         float dt_norm = Eigen::Vector3f(transform[3], transform[4], transform[5]).norm();
 
+
+        // Convergece check
+        // TODO: refactor
         cout << dr_norm * 180 / M_PI << endl;
         cout << dt_norm * 100 << endl;
         cout << endl;
-
         if (dr_norm * 180 / M_PI < tolerance_rotation && dt_norm * 100 < tolerance_translation) {
             break;
         }
 
     }  // for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++)
 
-    // Frame Transformation
-////////////////////////////////////////////////////////////////////////////////////////////////////
-    float rx, ry, rz, tx, ty, tz;
-    AccumulateRotation(transform_sum[0], transform_sum[1], transform_sum[2], 
-                       -transform[0], -transform[1] * 1.05, -transform[2], rx, ry, rz);
-    
-    
-      float x1 = cos(rz) * transform[3] 
-               - sin(rz) * transform[4];
-      float y1 = sin(rz) * transform[3]
-               + cos(rz) * transform[4];
-      float z1 = transform[5] * 1.05;
-
-      float x2 = x1;
-      float y2 = cos(rx) * y1 - sin(rx) * z1;
-      float z2 = sin(rx) * y1 + cos(rx) * z1;
-
-      tx = transform_sum[3] - (cos(ry) * x2 + sin(ry) * z2);
-      ty = transform_sum[4] - y2;
-      tz = transform_sum[5] - (-sin(ry) * x2 + cos(ry) * z2);
-
-      transform_sum[0] = rx;
-      transform_sum[1] = ry;
-      transform_sum[2] = rz;
-      transform_sum[3] = tx;
-      transform_sum[4] = ty;
-      transform_sum[5] = tz;
-    
-    
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    // Reproject point clouds to the end of the sweep
+    // Reproject point clouds to the time at the end of the sweep
     for (auto& p : edge_points_less_sharp->points) {
         reproject_to_end(p, p);
     }
@@ -929,38 +902,98 @@ void OdometryEstimator::process() {
         kdtree_planar_points_last->setInputCloud(planar_points_last);
     }
 
-    // Publish result
+    // Frame Transformation
+    // TODO: from zxy to xyz
+    // TODO: refactor
+////////////////////////////////////////////////////////////////////////////////////////////////////
+    float rx, ry, rz, tx, ty, tz;
+    AccumulateRotation(transform_sum[0], transform_sum[1], transform_sum[2], 
+                       -transform[0], -transform[1] * 1.05, -transform[2], rx, ry, rz);
+    
+    
+    float x1 = cos(rz) * transform[3] 
+             - sin(rz) * transform[4];
+    float y1 = sin(rz) * transform[3]
+             + cos(rz) * transform[4];
+    float z1 = transform[5] * 1.05;
 
-    nav_msgs::Odometry laserOdometry;
-    laserOdometry.header.frame_id = "/camera_init";
-    laserOdometry.child_frame_id = "/laser_odom";
+    float x2 = x1;
+    float y2 = cos(rx) * y1 - sin(rx) * z1;
+    float z2 = sin(rx) * y1 + cos(rx) * z1;
 
-    tf::StampedTransform laserOdometryTrans;
-    laserOdometryTrans.frame_id_ = "/camera_init";
-    laserOdometryTrans.child_frame_id_ = "/laser_odom";
-  
+    tx = transform_sum[3] - (cos(ry) * x2 + sin(ry) * z2);
+    ty = transform_sum[4] - y2;
+    tz = transform_sum[5] - (-sin(ry) * x2 + cos(ry) * z2);
+
+    transform_sum[0] = rx;
+    transform_sum[1] = ry;
+    transform_sum[2] = rz;
+    transform_sum[3] = tx;
+    transform_sum[4] = ty;
+    transform_sum[5] = tz;
+    
+    // To quaternion
+    // TODO: from zxy to xyz
     geometry_msgs::Quaternion geoQuat = tf::createQuaternionMsgFromRollPitchYaw(rz, -rx, -ry);
+////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+    // Broadcast transformation
+    // TODO: from zxy to xyz
+    tf::StampedTransform lidar_odometry_trans;
+    lidar_odometry_trans.stamp_ = ros::Time().fromSec(time_point_cloud);
+    lidar_odometry_trans.frame_id_ = camera_init_frame_id;
+    lidar_odometry_trans.child_frame_id_ = camera_odom_frame_id;
+    lidar_odometry_trans.setRotation(tf::Quaternion(-geoQuat.y, -geoQuat.z, geoQuat.x, geoQuat.w));
+    lidar_odometry_trans.setOrigin(tf::Vector3(tx, ty, tz));
+    tf_broadcaster.sendTransform(lidar_odometry_trans);
 
-    laserOdometry.header.stamp = ros::Time().fromSec(time_point_cloud);
-    laserOdometry.pose.pose.orientation.x = -geoQuat.y;
-    laserOdometry.pose.pose.orientation.y = -geoQuat.z;
-    laserOdometry.pose.pose.orientation.z = geoQuat.x;
-    laserOdometry.pose.pose.orientation.w = geoQuat.w;
-    laserOdometry.pose.pose.position.x = tx;
-    laserOdometry.pose.pose.position.y = ty;
-    laserOdometry.pose.pose.position.z = tz;
-    pub_lidar_odometry.publish(laserOdometry);
+    // Publish lidar odometry
+    // TODO: from zxy to xyz
+    nav_msgs::Odometry lidar_odometry_msg;
+    lidar_odometry_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
+    lidar_odometry_msg.header.frame_id = camera_init_frame_id;
+    lidar_odometry_msg.child_frame_id = camera_odom_frame_id;
+    lidar_odometry_msg.pose.pose.orientation.x = -geoQuat.y;
+    lidar_odometry_msg.pose.pose.orientation.y = -geoQuat.z;
+    lidar_odometry_msg.pose.pose.orientation.z = geoQuat.x;
+    lidar_odometry_msg.pose.pose.orientation.w = geoQuat.w;
+    lidar_odometry_msg.pose.pose.position.x = tx;
+    lidar_odometry_msg.pose.pose.position.y = ty;
+    lidar_odometry_msg.pose.pose.position.z = tz;
+    pub_lidar_odometry.publish(lidar_odometry_msg);
 
-    laserOdometryTrans.stamp_ = ros::Time().fromSec(time_point_cloud);
-    laserOdometryTrans.setRotation(tf::Quaternion(-geoQuat.y, -geoQuat.z, geoQuat.x, geoQuat.w));
-    laserOdometryTrans.setOrigin(tf::Vector3(tx, ty, tz));
-    tf_broadcaster.sendTransform(laserOdometryTrans);
-
-        sensor_msgs::PointCloud2 laserCloudFullRes3;
-        pcl::toROSMsg(*point_cloud, laserCloudFullRes3);
-        laserCloudFullRes3.header.stamp = ros::Time().fromSec(time_point_cloud);
-        laserCloudFullRes3.header.frame_id = "/laser_odom";  // TODO: use /camera
-        pub_point_cloud_reprojected.publish(laserCloudFullRes3);
+    // Skip frames
+    if (frame_count % num_skip_frame == 0) {
+         
+        // Reproject the point cloud to the time at the end of the sweep
+        for (auto& p : point_cloud->points) {
+            reproject_to_end(p, p);
+        }
+        
+        // Publish the reprojected full resolution point cloud message
+        sensor_msgs::PointCloud2 point_cloud_reprojected_msg;
+        pcl::toROSMsg(*point_cloud, point_cloud_reprojected_msg);
+        point_cloud_reprojected_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
+        point_cloud_reprojected_msg.header.frame_id = camera_odom_frame_id;  // TODO: use camera_frame_id
+        pub_point_cloud_reprojected.publish(point_cloud_reprojected_msg);
+   
+        // Publish the reprojected less sharp edge point cloud message
+        sensor_msgs::PointCloud2 edge_points_last_msg;
+        pcl::toROSMsg(*edge_points_last, edge_points_last_msg);
+        edge_points_last_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
+        edge_points_last_msg.header.frame_id = camera_odom_frame_id;  // TODO: use camera_frame_id
+        pub_edge_points_last.publish(edge_points_last_msg);
+   
+        // Publish the reprojected less flat planar point cloud message
+        sensor_msgs::PointCloud2 planar_points_last_msg;
+        pcl::toROSMsg(*planar_points_last, planar_points_last_msg);
+        planar_points_last_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
+        planar_points_last_msg.header.frame_id = camera_odom_frame_id;  // TODO: use camera_frame_id
+        pub_planar_points_last.publish(planar_points_last_msg);
+    }
+    
+    // Update frame count
+    frame_count++;
 
     // Debug
     ROS_INFO("XD");  
@@ -969,7 +1002,6 @@ void OdometryEstimator::process() {
 
 
 void OdometryEstimator::spin() {
-    int frame_count = num_skip_frame;
     ros::Rate ros_rate(100);
     
     // loop until shutdown TODO: use shutdown hook
