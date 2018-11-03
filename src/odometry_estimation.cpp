@@ -51,6 +51,27 @@ inline Eigen::Quaternionf euler_to_quaternion(const float roll, const float pitc
 }
 
 
+void AccumulateRotation(float cx, float cy, float cz, float lx, float ly, float lz, 
+                        float &ox, float &oy, float &oz)
+{
+  float srx = cos(lx)*cos(cx)*sin(ly)*sin(cz) - cos(cx)*cos(cz)*sin(lx) - cos(lx)*cos(ly)*sin(cx);
+  ox = -asin(srx);
+
+  float srycrx = sin(lx)*(cos(cy)*sin(cz) - cos(cz)*sin(cx)*sin(cy)) + cos(lx)*sin(ly)*(cos(cy)*cos(cz) 
+               + sin(cx)*sin(cy)*sin(cz)) + cos(lx)*cos(ly)*cos(cx)*sin(cy);
+  float crycrx = cos(lx)*cos(ly)*cos(cx)*cos(cy) - cos(lx)*sin(ly)*(cos(cz)*sin(cy) 
+               - cos(cy)*sin(cx)*sin(cz)) - sin(lx)*(sin(cy)*sin(cz) + cos(cy)*cos(cz)*sin(cx));
+  oy = atan2(srycrx / cos(ox), crycrx / cos(ox));
+
+  float srzcrx = sin(cx)*(cos(lz)*sin(ly) - cos(ly)*sin(lx)*sin(lz)) + cos(cx)*sin(cz)*(cos(ly)*cos(lz) 
+               + sin(lx)*sin(ly)*sin(lz)) + cos(lx)*cos(cx)*cos(cz)*sin(lz);
+  float crzcrx = cos(lx)*cos(lz)*cos(cx)*cos(cz) - cos(cx)*sin(cz)*(cos(ly)*sin(lz) 
+               - cos(lz)*sin(lx)*sin(ly)) - sin(cx)*(sin(ly)*sin(lz) + cos(ly)*cos(lz)*sin(lx));
+  oz = atan2(srzcrx / cos(ox), crzcrx / cos(ox));
+}
+
+
+
 class OdometryEstimator {
     ros::NodeHandle& node;
     ros::Publisher pub_edge_points_last;
@@ -151,6 +172,7 @@ public:
 private:    
     OdometryEstimator();
     void reproject_to_start(const PointXYZI& pi, PointXYZI& po);
+    void reproject_to_end(const PointXYZI& pi, PointXYZI& po);
     bool new_data_received();
     void reset();
     void initialize();
@@ -269,6 +291,56 @@ void OdometryEstimator::reproject_to_start(const PointXYZI& pi, PointXYZI& po) {
     po.y = point_out[1];
     po.z = point_out[2];
     po.intensity = pi.intensity;
+}
+
+
+void OdometryEstimator::reproject_to_end(const PointXYZI& pi, PointXYZI& po) {
+    // Get the reletive time
+    float rel_time = (1 / scan_period) * (pi.intensity - int(pi.intensity));
+
+    // Get the transformation information
+    float rx = rel_time * transform[0];
+    float ry = rel_time * transform[1];
+    float rz = rel_time * transform[2];
+    float tx = rel_time * transform[3];
+    float ty = rel_time * transform[4];
+    float tz = rel_time * transform[5];
+
+  float x1 = cos(rz) * (pi.x - tx) + sin(rz) * (pi.y - ty);
+  float y1 = -sin(rz) * (pi.x - tx) + cos(rz) * (pi.y - ty);
+  float z1 = (pi.z - tz);
+
+  float x2 = x1;
+  float y2 = cos(rx) * y1 + sin(rx) * z1;
+  float z2 = -sin(rx) * y1 + cos(rx) * z1;
+
+  float x3 = cos(ry) * x2 - sin(ry) * z2;
+  float y3 = y2;
+  float z3 = sin(ry) * x2 + cos(ry) * z2;
+
+  rx = transform[0];
+  ry = transform[1];
+  rz = transform[2];
+  tx = transform[3];
+  ty = transform[4];
+  tz = transform[5];
+
+  float x4 = cos(ry) * x3 + sin(ry) * z3;
+  float y4 = y3;
+  float z4 = -sin(ry) * x3 + cos(ry) * z3;
+
+  float x5 = x4;
+  float y5 = cos(rx) * y4 - sin(rx) * z4;
+  float z5 = sin(rx) * y4 + cos(rx) * z4;
+
+  float x6 = cos(rz) * x5 - sin(rz) * y5 + tx;
+  float y6 = sin(rz) * x5 + cos(rz) * y5 + ty;
+  float z6 = z5 + tz;
+
+    po.x = x6;
+    po.y = y6;
+    po.z = z6;
+    po.intensity = int(pi.intensity);
 }
 
 
@@ -797,7 +869,50 @@ void OdometryEstimator::process() {
 
     }  // for (int iter_count = 0; iter_count < max_lm_iteration; iter_count++)
 
+    
+////////////////////////////////////////////////////////////////////////////////////////////////////
+    float rx, ry, rz, tx, ty, tz;
+    AccumulateRotation(transform_sum[0], transform_sum[1], transform_sum[2], 
+                       -transform[0], -transform[1] * 1.05, -transform[2], rx, ry, rz);
+    
+    
+      float x1 = cos(rz) * transform[3] 
+               - sin(rz) * transform[4];
+      float y1 = sin(rz) * transform[3]
+               + cos(rz) * transform[4];
+      float z1 = transform[5] * 1.05;
+
+      float x2 = x1;
+      float y2 = cos(rx) * y1 - sin(rx) * z1;
+      float z2 = sin(rx) * y1 + cos(rx) * z1;
+
+      tx = transform_sum[3] - (cos(ry) * x2 + sin(ry) * z2);
+      ty = transform_sum[4] - y2;
+      tz = transform_sum[5] - (-sin(ry) * x2 + cos(ry) * z2);
+
+      transform_sum[0] = rx;
+      transform_sum[1] = ry;
+      transform_sum[2] = rz;
+      transform_sum[3] = tx;
+      transform_sum[4] = ty;
+      transform_sum[5] = tz;
+    
+    
+////////////////////////////////////////////////////////////////////////////////////////////////////
+  
+    // Frame Transformation
+
+
     // Publish result
+
+    
+    // Reproject point clouds to the end of the sweep
+    for (auto& p : *edge_points_less_sharp) {
+        reproject_to_end(p, p);
+    }
+    for (auto& p : *planar_points_less_flat) {
+        reproject_to_end(p, p);
+    }
 
     // Update reference feature points with pointer swap
     edge_points_last.swap(edge_points_less_sharp);
