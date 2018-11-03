@@ -947,37 +947,10 @@ int main(int argc, char** argv)
       }  // if (laserCloudCornerLastNum > 10 && laserCloudSurfLastNum > 100) {}
      
     
-      cout << "(1)************************************************************************" << endl;
-      cout << "* ";
-      for (int i = 0; i < 6; i++) {
-          cout << transform[i] << "\t";
-      }
-      cout << endl;
-      cout << "* ";
-      for (int i = 0; i < 6; i++) {
-          cout << transformSum[i] << "\t";
-      }
-      cout << endl;
-      cout << "(1)************************************************************************" << endl;
-        
-
       float rx, ry, rz, tx, ty, tz;
       AccumulateRotation(transformSum[0], transformSum[1], transformSum[2], 
                          -transform[0], -transform[1] * 1.05, -transform[2], rx, ry, rz);
 
-      cout << "(2)************************************************************************" << endl;
-      cout << "* ";
-      for (int i = 0; i < 6; i++) {
-          cout << transform[i] << "\t";
-      }
-      cout << endl;
-      cout << "* ";
-      for (int i = 0; i < 6; i++) {
-          cout << transformSum[i] << "\t";
-      }
-      cout << endl;
-      cout << "* " << rx << "\t" << ry << "\t" << rz << endl;
-      cout << "(2)************************************************************************" << endl;
 
       float x1 = cos(rz) * (transform[3] - imuShiftFromStartX) 
                - sin(rz) * (transform[4] - imuShiftFromStartY);
