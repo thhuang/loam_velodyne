@@ -903,8 +903,8 @@ void LidarOdometry::process() {
     
     // Just for testing
     // TODO: remove this
-    //lidar_odometry_trans.child_frame_id_ = camera_frame_id;  //TODO: use camera_odom_frame_id
-    //tf_broadcaster.sendTransform(lidar_odometry_trans);
+    lidar_odometry_trans.child_frame_id_ = camera_frame_id;  //TODO: use camera_odom_frame_id
+    tf_broadcaster.sendTransform(lidar_odometry_trans);
 
     // Publish lidar odometry
     // TODO: from zxy to xyz
