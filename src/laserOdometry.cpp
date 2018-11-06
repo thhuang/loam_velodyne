@@ -518,33 +518,14 @@ int main(int argc, char** argv)
           // Process edge points
           for (int i = 0; i < cornerPointsSharpNum; i++) {
            
-              
-              if (i == 15) {
-                  PointType tmp;
-                  tmp = cornerPointsSharp->points[i];
-                  cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
-                       << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
-                  cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
-              }
             // Reprojected selected point to the beginning of the sweep
             TransformToStart(&cornerPointsSharp->points[i], &pointSel);
               
-              if (i == 15) {
-                  PointType tmp;
-                  tmp = pointSel;
-                  cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
-              }
-
             if (iterCount % 5 == 0) {
               std::vector<int> indices;
               pcl::removeNaNFromPointCloud(*laserCloudCornerLast,*laserCloudCornerLast, indices);
               kdtreeCornerLast->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);
              
-              if (i < 5) {
-                 cout << "nearestKSearch: " << endl;
-                 cout << "\t" << pointSearchInd[0] << "\t" << pointSearchSqDis[0] << endl;
-              }
-              
               int closestPointInd = -1, minPointInd2 = -1;
               if (pointSearchSqDis[0] < 25) {
                 closestPointInd = pointSearchInd[0];
@@ -599,14 +580,6 @@ int main(int argc, char** argv)
                 
               }  // if (pointSearchSqDis[0] < 25)
 
-              //cout << "closestPointScan: " << closestPointScan << endl;
-              //cout << "laserCloudCornerLast->points[j].intensity: " << laserCloudCornerLast->points[minPointInd2].intensity << endl;
-              //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan + 2) << endl;
-              //cout << (laserCloudCornerLast->points[minPointInd2].intensity == closestPointScan - 2) << endl;
-              //cout << "minPointInd2: " << minPointInd2 << endl;
-              //cout << "minPointSqDis2: " << minPointSqDis2 << endl;
-              //cout << endl;
-              
               pointSearchCornerInd1[i] = closestPointInd;
               pointSearchCornerInd2[i] = minPointInd2;
             }  // if (iterCount % 5 == 0)
@@ -614,15 +587,6 @@ int main(int argc, char** argv)
             if (pointSearchCornerInd2[i] >= 0) {
               tripod1 = laserCloudCornerLast->points[pointSearchCornerInd1[i]];
               tripod2 = laserCloudCornerLast->points[pointSearchCornerInd2[i]];
-
-
-                if (i == 0) {
-                    cout << "#######################################" << endl;
-                    cout << "# [i]: " << i << "\t" << pointSel.x << "\t" << pointSel.y << "\t" << pointSel.z << endl;
-                    cout << "# [j]: " << pointSearchCornerInd1[i] << "\t" << tripod1.x << "\t" << tripod1.y << "\t" << tripod1.z << endl;
-                    cout << "# [l]: " << pointSearchCornerInd2[i] << "\t" << tripod2.x << "\t" << tripod2.y << "\t" << tripod2.z << endl;
-                    cout << "#######################################" << endl;
-                }
 
               float x0 = pointSel.x;
               float y0 = pointSel.y;
@@ -797,17 +761,6 @@ int main(int argc, char** argv)
       
           // Calculate the number of constrains
           int pointSelNum = laserCloudOri->points.size();
-          cout << "==========================" << endl;
-          cout << pointSelNum << endl;
-          PointType tmp1 = laserCloudOri->points[0];
-          PointType tmp2 = coeffSel->points[0];
-          cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
-          cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
-          tmp1 = laserCloudOri->points[pointSelNum - 1];
-          tmp2 = coeffSel->points[pointSelNum - 1];
-          cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
-          cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
-          cout << "==========================" << endl;
           if (pointSelNum < 10) {
             continue;
           }
@@ -919,9 +872,6 @@ int main(int argc, char** argv)
           transform[4] += matX.at<float>(4, 0);
           transform[5] += matX.at<float>(5, 0);
                 
-          cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
-               << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
-
           for(int i=0; i<6; i++){
             if(isnan(transform[i]))
               transform[i]=0;
@@ -935,10 +885,6 @@ int main(int argc, char** argv)
                               pow(matX.at<float>(3, 0) * 100, 2) +
                               pow(matX.at<float>(4, 0) * 100, 2) +
                               pow(matX.at<float>(5, 0) * 100, 2));
-
-          cout << deltaR << endl;
-          cout << deltaT << endl;
-          cout << endl;
 
           if (deltaR < 0.1 && deltaT < 0.1) {
             break;
@@ -1048,8 +994,6 @@ int main(int argc, char** argv)
         pubLaserCloudFullRes.publish(laserCloudFullRes3);
       }
           
-      ROS_INFO("XD");  
-    
     }
 
     status = ros::ok();
