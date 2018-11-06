@@ -8,15 +8,29 @@
     <param name="lidar" value="VLP-16" />
   </node>
 
+  <!--
   <node pkg="loam_velodyne" type="laserOdometry" name="laserOdometry" output="screen" respawn="true">
+    <remap from="/velodyne_cloud_2" to="/velodyne_cloud_denoised"/>
     <remap from="/laser_cloud_sharp" to="/edge_points_sharp"/>
     <remap from="/laser_cloud_less_sharp" to="/edge_points_less_sharp"/>
     <remap from="/laser_cloud_flat" to="/planar_points_flat"/>
     <remap from="/laser_cloud_less_flat" to="/planar_points_less_flat"/>
   </node>
+  -->
+  
+  <include file="$(find slam3d)/launch/lidar_odometry.launch" />
 
-  <node pkg="loam_velodyne" type="laserMapping" name="laserMapping" output="screen"/>
-  <node pkg="loam_velodyne" type="transformMaintenance" name="transformMaintenance" output="screen"/>
+  <node pkg="loam_velodyne" type="laserMapping" name="laserMapping" output="screen">
+    <remap from="/velodyne_cloud_3" to="/velodyne_cloud_reprojected" />
+    <remap from="/laser_cloud_corner_last" to="/edge_points_last" />
+    <remap from="/laser_cloud_surf_last" to="/planar_points_last" />
+    <remap from="/laser_odom_to_init" to="/lidar_odom_to_init" />
+  </node>
+  
+  
+  <node pkg="loam_velodyne" type="transformMaintenance" name="transformMaintenance" output="screen">
+    <remap from="/laser_odom_to_init" to="/lidar_odom_to_init" />
+  </node>
 
   <group if="$(arg rviz)">
     <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find slam3d)/rviz/test.rviz" />

@@ -9,6 +9,8 @@ Panels:
         - /PointCloud21
         - /PointCloud22
         - /PointCloud23
+        - /TF1
+        - /TF1/Frames1
       Splitter Ratio: 0.5
     Tree Height: 775
   - Class: rviz/Selection
@@ -76,7 +78,7 @@ Visualization Manager:
       Size (Pixels): 1.5
       Size (m): 0.00999999978
       Style: Points
-      Topic: /velodyne_cloud_2
+      Topic: /velodyne_cloud_reprojected
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -141,6 +143,26 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        camera_init:
+          Value: true
+        camera_odom:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        camera_init:
+          camera_odom:
+            {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -166,25 +188,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 48.6070747
+      Distance: 62.2594032
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 12.5834541
+        Y: -2.34516764
+        Z: 1.58704555
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.0500000007
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 0.625398338
+      Pitch: 0.509797513
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.52357388
+      Yaw: 3.19857121
     Saved: ~
 Window Geometry:
   Displays:

@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+
+<launch>
+    <node pkg="slam3d" type="lidar_odometry" name="lidar_odometry" output="screen" respawn="true" />
+</launch>

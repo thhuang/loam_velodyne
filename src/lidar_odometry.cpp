@@ -74,7 +74,7 @@ void AccumulateRotation(float cx, float cy, float cz, float lx, float ly, float 
 
 
 
-class OdometryEstimator {
+class LidarOdometry {
     ros::NodeHandle& node;
     ros::Publisher pub_edge_points_last;
     ros::Publisher pub_planar_points_last;
@@ -125,7 +125,7 @@ class OdometryEstimator {
     const float tolerance_translation;
 
 public:
-    OdometryEstimator(ros::NodeHandle& node) 
+    LidarOdometry(ros::NodeHandle& node) 
         : node(node),
           pub_edge_points_last(node.advertise<sensor_msgs::PointCloud2>("/edge_points_last", 2)),  // TODO: remap
           pub_planar_points_last(node.advertise<sensor_msgs::PointCloud2>("/planar_points_last", 2)),  // TODO: remap
@@ -179,7 +179,7 @@ public:
     void imu_trans_callback(const sensor_msgs::PointCloud2ConstPtr& imu_trans_msg);
 
 private:    
-    OdometryEstimator();
+    LidarOdometry();
     void reproject_to_start(const PointXYZI& pi, PointXYZI& po);
     void reproject_to_end(const PointXYZI& pi, PointXYZI& po);
     bool new_data_received();
@@ -189,7 +189,7 @@ private:
 };
 
 
-void OdometryEstimator::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr& point_cloud_msg) {
+void LidarOdometry::point_cloud_callback(const sensor_msgs::PointCloud2ConstPtr& point_cloud_msg) {
     // Record timestamp
     time_point_cloud = point_cloud_msg->header.stamp.toSec();
     
@@ -204,7 +204,7 @@ void OdometryEstimator::point_cloud_callback(const sensor_msgs::PointCloud2Const
 }
 
 
-void OdometryEstimator::edge_points_sharp_callback(const sensor_msgs::PointCloud2ConstPtr& edge_points_sharp_msg) {
+void LidarOdometry::edge_points_sharp_callback(const sensor_msgs::PointCloud2ConstPtr& edge_points_sharp_msg) {
     // Record timestamp
     time_edge_points_sharp = edge_points_sharp_msg->header.stamp.toSec();
     
@@ -219,7 +219,7 @@ void OdometryEstimator::edge_points_sharp_callback(const sensor_msgs::PointCloud
 }
 
 
-void OdometryEstimator::edge_points_less_sharp_callback(const sensor_msgs::PointCloud2ConstPtr& edge_points_less_sharp_msg) {
+void LidarOdometry::edge_points_less_sharp_callback(const sensor_msgs::PointCloud2ConstPtr& edge_points_less_sharp_msg) {
     // Record timestamp
     time_edge_points_less_sharp = edge_points_less_sharp_msg->header.stamp.toSec();
     
@@ -234,7 +234,7 @@ void OdometryEstimator::edge_points_less_sharp_callback(const sensor_msgs::Point
 }
 
 
-void OdometryEstimator::planar_points_flat_callback(const sensor_msgs::PointCloud2ConstPtr& planar_points_flat_msg) {
+void LidarOdometry::planar_points_flat_callback(const sensor_msgs::PointCloud2ConstPtr& planar_points_flat_msg) {
     // Record timestamp
     time_planar_points_flat = planar_points_flat_msg->header.stamp.toSec();
     
@@ -249,7 +249,7 @@ void OdometryEstimator::planar_points_flat_callback(const sensor_msgs::PointClou
 }
 
 
-void OdometryEstimator::planar_points_less_flat_callback(const sensor_msgs::PointCloud2ConstPtr& planar_points_less_flat_msg) {
+void LidarOdometry::planar_points_less_flat_callback(const sensor_msgs::PointCloud2ConstPtr& planar_points_less_flat_msg) {
     // Record timestamp
     time_planar_points_less_flat = planar_points_less_flat_msg->header.stamp.toSec();
     
@@ -264,7 +264,7 @@ void OdometryEstimator::planar_points_less_flat_callback(const sensor_msgs::Poin
 }
 
 
-void OdometryEstimator::imu_trans_callback(const sensor_msgs::PointCloud2ConstPtr& imu_trans_msg) {
+void LidarOdometry::imu_trans_callback(const sensor_msgs::PointCloud2ConstPtr& imu_trans_msg) {
     // Record timestamp
     time_imu_trans = imu_trans_msg->header.stamp.toSec();
     
@@ -273,7 +273,7 @@ void OdometryEstimator::imu_trans_callback(const sensor_msgs::PointCloud2ConstPt
 }
 
 
-void OdometryEstimator::reproject_to_start(const PointXYZI& pi, PointXYZI& po) {
+void LidarOdometry::reproject_to_start(const PointXYZI& pi, PointXYZI& po) {
     // Get the reletive time
     float rel_time = (1 / scan_period) * (pi.intensity - int(pi.intensity));
 
@@ -303,7 +303,7 @@ void OdometryEstimator::reproject_to_start(const PointXYZI& pi, PointXYZI& po) {
 }
 
 
-void OdometryEstimator::reproject_to_end(const PointXYZI& pi, PointXYZI& po) {
+void LidarOdometry::reproject_to_end(const PointXYZI& pi, PointXYZI& po) {
     // Get the reletive time
     float rel_time = (1 / scan_period) * (pi.intensity - int(pi.intensity));
 
@@ -353,7 +353,7 @@ void OdometryEstimator::reproject_to_end(const PointXYZI& pi, PointXYZI& po) {
 }
 
 
-bool OdometryEstimator::new_data_received() {
+bool LidarOdometry::new_data_received() {
     // TODO: refactor
     return new_point_cloud &&
            new_edge_points_sharp &&
@@ -369,7 +369,7 @@ bool OdometryEstimator::new_data_received() {
 }
 
 
-void OdometryEstimator::reset() {
+void LidarOdometry::reset() {
     new_point_cloud = false;
     new_edge_points_sharp = false;
     new_edge_points_less_sharp = false;
@@ -379,7 +379,7 @@ void OdometryEstimator::reset() {
 }
 
 
-void OdometryEstimator::initialize() {
+void LidarOdometry::initialize() {
     // Update reference feature points with pointer swap
     edge_points_last.swap(edge_points_less_sharp);
     planar_points_last.swap(planar_points_less_flat);
@@ -408,7 +408,7 @@ void OdometryEstimator::initialize() {
 } 
 
 
-void OdometryEstimator::process() {
+void LidarOdometry::process() {
     ////////////////
     // Preprocess //
     ////////////////
@@ -466,23 +466,8 @@ void OdometryEstimator::process() {
         // Process edge points
         for (int i = 0; i < num_edge_points_sharp; i++) {
         
-            if (i == 15) {
-                PointXYZI tmp;
-                tmp = edge_points_sharp->points[i];
-                cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
-                     << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
-                cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
-            }
-
             // Reproject the selected point [i] to the start of the sweep
             reproject_to_start(edge_points_sharp->points[i], point_i);
-           
-            if (i == 15) {
-                PointXYZI tmp;
-                tmp = point_i;
-                cout << tmp.x << "\t" << tmp.y << "\t" << tmp.z << endl;
-            }
-
 
             // Recalculate the transformation after transformation_recalculate_iteration iterations
             if (iter_count % transformation_recalculate_iteration == 0) {
@@ -494,11 +479,6 @@ void OdometryEstimator::process() {
 
                 // Find the nearest neighbor [j]
                 kdtree_edge_points_last->nearestKSearch(point_i, 1, point_search_id, point_search_square_distance);
-                
-                if (i < 5) {
-                    cout << "nearestKSearch: " << endl;
-                    cout << "\t" << point_search_id[0] << "\t" << point_search_square_distance[0] << endl;
-                }
 
                 // Find the nearest neighbor of [i] in the two consecutive scans to the scan of [j] as [l]
                 if (point_search_square_distance[0] < nearest_neighbor_cutoff) {
@@ -557,14 +537,6 @@ void OdometryEstimator::process() {
                 // Get searched points
                 point_j = edge_points_last->points[edge_point_j_id[i]];
                 point_l = edge_points_last->points[edge_point_l_id[i]];
-
-                if (i == 0) {
-                    cout << "#######################################" << endl;
-                    cout << "# [i]: " << i << "\t" << point_i.x << "\t" << point_i.y << "\t" << point_i.z << endl;
-                    cout << "# [j]: " << edge_point_j_id[i] << "\t" << point_j.x << "\t" << point_j.y << "\t" << point_j.z << endl;
-                    cout << "# [l]: " << edge_point_l_id[i] << "\t" << point_l.x << "\t" << point_l.y << "\t" << point_l.z << endl;
-                    cout << "#######################################" << endl;
-                }
 
                 // Get vectors
                 Eigen::Vector3f v_ij(point_j.x - point_i.x, point_j.y - point_i.y, point_j.z - point_i.z);    
@@ -742,17 +714,6 @@ void OdometryEstimator::process() {
        
         // Calculate the number of constrains
         int num_constrains = constrain_points->points.size();
-        cout << "==========================" << endl;
-        cout << num_constrains << endl;
-        PointXYZI tmp1 = constrain_points->points[0];
-        PointXYZI tmp2 = constrain_parameters->points[0];
-        cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
-        cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
-        tmp1 = constrain_points->points[num_constrains - 1];
-        tmp2 = constrain_parameters->points[num_constrains - 1];
-        cout << tmp1.x << "\t" << tmp1.y << "\t" << tmp1.z << "\t" << tmp1.intensity << endl;
-        cout << tmp2.x << "\t" << tmp2.y << "\t" << tmp2.z << "\t" << tmp2.intensity << endl;
-        cout << "==========================" << endl;
         if (num_constrains < 10) {
             continue;
         }
@@ -844,7 +805,6 @@ void OdometryEstimator::process() {
         mat_AtA = mat_At * mat_A;
         mat_AtB = mat_At * mat_B;
         mat_X = mat_AtA.colPivHouseholderQr().solve(mat_AtB);
-        //cout << "The relative error is:\n" << ((mat_AtA * mat_X - mat_AtB) / mat_AtB.norm()).transpose() << endl;
         
         // Update transformation
         transform[0] += mat_X(0, 0);
@@ -854,9 +814,6 @@ void OdometryEstimator::process() {
         transform[4] += mat_X(4, 0);
         transform[5] += mat_X(5, 0);
 
-        cout << transform[0] << "\t" << transform[1] << "\t" << transform[2] << "\t"
-             << transform[3] << "\t" << transform[4] << "\t" << transform[5] << endl;
-        
         // Check whether the value of the transformation is finit
         for (auto& ele : transform) {
             if (!pcl_isfinite(ele)) {
@@ -871,9 +828,6 @@ void OdometryEstimator::process() {
 
         // Convergece check
         // TODO: refactor
-        cout << dr_norm * 180 / M_PI << endl;
-        cout << dt_norm * 100 << endl;
-        cout << endl;
         if (dr_norm * 180 / M_PI < tolerance_rotation && dt_norm * 100 < tolerance_translation) {
             break;
         }
@@ -946,6 +900,11 @@ void OdometryEstimator::process() {
     lidar_odometry_trans.setRotation(tf::Quaternion(-geoQuat.y, -geoQuat.z, geoQuat.x, geoQuat.w));
     lidar_odometry_trans.setOrigin(tf::Vector3(tx, ty, tz));
     tf_broadcaster.sendTransform(lidar_odometry_trans);
+    
+    // Just for testing
+    // TODO: remove this
+    //lidar_odometry_trans.child_frame_id_ = camera_frame_id;  //TODO: use camera_odom_frame_id
+    //tf_broadcaster.sendTransform(lidar_odometry_trans);
 
     // Publish lidar odometry
     // TODO: from zxy to xyz
@@ -974,21 +933,21 @@ void OdometryEstimator::process() {
         sensor_msgs::PointCloud2 point_cloud_reprojected_msg;
         pcl::toROSMsg(*point_cloud, point_cloud_reprojected_msg);
         point_cloud_reprojected_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
-        point_cloud_reprojected_msg.header.frame_id = camera_odom_frame_id;  // TODO: use camera_frame_id
+        point_cloud_reprojected_msg.header.frame_id = camera_frame_id;  
         pub_point_cloud_reprojected.publish(point_cloud_reprojected_msg);
    
         // Publish the reprojected less sharp edge point cloud message
         sensor_msgs::PointCloud2 edge_points_last_msg;
         pcl::toROSMsg(*edge_points_last, edge_points_last_msg);
         edge_points_last_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
-        edge_points_last_msg.header.frame_id = camera_odom_frame_id;  // TODO: use camera_frame_id
+        edge_points_last_msg.header.frame_id = camera_frame_id;
         pub_edge_points_last.publish(edge_points_last_msg);
    
         // Publish the reprojected less flat planar point cloud message
         sensor_msgs::PointCloud2 planar_points_last_msg;
         pcl::toROSMsg(*planar_points_last, planar_points_last_msg);
         planar_points_last_msg.header.stamp = ros::Time().fromSec(time_point_cloud);
-        planar_points_last_msg.header.frame_id = camera_odom_frame_id;  // TODO: use camera_frame_id
+        planar_points_last_msg.header.frame_id = camera_frame_id;
         pub_planar_points_last.publish(planar_points_last_msg);
     }
     
@@ -1001,7 +960,7 @@ void OdometryEstimator::process() {
 }
 
 
-void OdometryEstimator::spin() {
+void LidarOdometry::spin() {
     ros::Rate ros_rate(100);
     
     // loop until shutdown TODO: use shutdown hook
@@ -1018,35 +977,35 @@ void OdometryEstimator::spin() {
 
 int main(int argc, char** argv) {
     
-    ros::init(argc, argv, "odometry_estimation");
+    ros::init(argc, argv, "lidar_odometry");
     ros::NodeHandle node;
 
-    OdometryEstimator odometry_estimator(node);
+    LidarOdometry lidar_odometry(node);
 
     /////////////////
     // Subscribers //
     /////////////////
 
-    ros::Subscriber sub_point_cloud = node.subscribe("/velodyne_cloud_2", 2, 
-                                                     &OdometryEstimator::point_cloud_callback,
-                                                     &odometry_estimator);
+    ros::Subscriber sub_point_cloud = node.subscribe("/velodyne_cloud_denoised", 2, 
+                                                     &LidarOdometry::point_cloud_callback,
+                                                     &lidar_odometry);
     ros::Subscriber sub_edge_points_sharp = node.subscribe("/edge_points_sharp", 2, 
-                                                     &OdometryEstimator::edge_points_sharp_callback,
-                                                     &odometry_estimator);
+                                                     &LidarOdometry::edge_points_sharp_callback,
+                                                     &lidar_odometry);
     ros::Subscriber sub_edge_points_less_sharp = node.subscribe("/edge_points_less_sharp", 2, 
-                                                     &OdometryEstimator::edge_points_less_sharp_callback,
-                                                     &odometry_estimator);
+                                                     &LidarOdometry::edge_points_less_sharp_callback,
+                                                     &lidar_odometry);
     ros::Subscriber sub_planar_points_flat = node.subscribe("/planar_points_flat", 2, 
-                                                     &OdometryEstimator::planar_points_flat_callback,
-                                                     &odometry_estimator);
+                                                     &LidarOdometry::planar_points_flat_callback,
+                                                     &lidar_odometry);
     ros::Subscriber sub_planar_points_less_flat = node.subscribe("/planar_points_less_flat", 2, 
-                                                     &OdometryEstimator::planar_points_less_flat_callback,
-                                                     &odometry_estimator);
+                                                     &LidarOdometry::planar_points_less_flat_callback,
+                                                     &lidar_odometry);
     ros::Subscriber sub_imu_trans = node.subscribe("/imu_trans", 5, 
-                                                     &OdometryEstimator::imu_trans_callback,
-                                                     &odometry_estimator);
+                                                     &LidarOdometry::imu_trans_callback,
+                                                     &lidar_odometry);
 
-    odometry_estimator.spin();
+    lidar_odometry.spin();
 
     return 0;
 }

@@ -3,8 +3,8 @@
 <launch>
 
   <include file="$(find slam3d)/launch/data_registration.launch" />
-  <include file="$(find slam3d)/launch/odometry_estimation.launch" />
-  
+  <include file="$(find slam3d)/launch/lidar_odometry.launch" />
+
   <arg name="rviz" default="true" />
 
   <group if="$(arg rviz)">

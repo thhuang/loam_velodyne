@@ -143,7 +143,7 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/slam3d_node.cpp)
 add_executable(data_registration src/data_registration.cpp)
-add_executable(odometry_estimation src/odometry_estimation.cpp)
+add_executable(lidar_odometry src/lidar_odometry.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -163,7 +163,7 @@ target_link_libraries(data_registration
     ${catkin_LIBRARIES}
     ${PCL_LIBRARIES}
 )
-target_link_libraries(odometry_estimation
+target_link_libraries(lidar_odometry
     ${catkin_LIBRARIES}
     ${PCL_LIBRARIES}
     ${OpenCV_LIBS}
