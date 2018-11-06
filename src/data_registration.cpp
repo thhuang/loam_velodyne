@@ -79,7 +79,7 @@ class DataRegistrar {
 public:
     DataRegistrar(ros::NodeHandle& node) 
         : node(node),
-          pub_point_cloud(node.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_2", 2)),
+          pub_point_cloud(node.advertise<sensor_msgs::PointCloud2>("/velodyne_cloud_denoised", 2)),
           pub_edge_points_sharp(node.advertise<sensor_msgs::PointCloud2>("/edge_points_sharp", 2)),
           pub_edge_points_less_sharp(node.advertise<sensor_msgs::PointCloud2>("/edge_points_less_sharp", 2)),
           pub_planar_points_flat(node.advertise<sensor_msgs::PointCloud2>("/planar_points_flat", 2)),
